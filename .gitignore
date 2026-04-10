@@ -1,0 +1,10 @@
+# IDE
+.vscode/
+data/
+
+__pycache__/
+
+results/
+results_all/
+results_jigsaw/
+results_last2/
