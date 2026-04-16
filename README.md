@@ -50,6 +50,9 @@ Due to the dependency on the `scikit-multiflow` framework, this project strictly
 pip install -r requirements.txt
 ```
 
+**Datasets available at:**
+https://drive.google.com/file/d/1g1Pxy9myMbFNnTs81uwxJybpekbRkb1T/view?usp=sharing
+
 ---
 
 ## 1. Data Preparation
