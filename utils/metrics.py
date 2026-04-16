@@ -1,9 +1,5 @@
 """
-utils/metrics.py — Výpočet hodnotiacich metrík pre streamové experimenty.
-
-Exportované funkcie:
-  safe_auc(y_true, y_proba, n_total_classes) -> float
-  compute_main_metrics(y_true, y_pred, y_proba, n_total_classes) -> dict
+Computation of evaluation metrics for streaming experiments.
 """
 
 import numpy as np
@@ -20,8 +16,8 @@ from utils.rwa_metric import calculate_rwa
 
 def safe_auc(y_true, y_proba, n_total_classes):
     """
-    Bezpečný výpočet ROC-AUC — vracia 0.5 pri chybe alebo jednej triede.
-    Pre multiclass používa OvR stratégiu.
+    Safe ROC-AUC computation - returns 0.5 on error or single class.
+    Uses OvR strategy for multiclass.
     """
     unique = np.unique(y_true)
     if len(unique) < 2:
@@ -36,18 +32,18 @@ def safe_auc(y_true, y_proba, n_total_classes):
 
 def compute_main_metrics(y_true, y_pred, y_proba, n_total_classes):
     """
-    Vypočíta všetky hodnodiace metriky pre jeden beh / blok.
+        Compute all evaluation metrics for one run/block.
 
-    Parametre
-    ----------
-    y_true          : array-like int, skutočné triedy
-    y_pred          : array-like int, predikované triedy
-    y_proba         : array (n_samples, n_total_classes), pravdepodobnosti tried
-    n_total_classes : int, celkový počet tried v datasete
+        Parameters
+        ----------
+        y_true          : array-like int, true classes
+        y_pred          : array-like int, predicted classes
+        y_proba         : array (n_samples, n_total_classes), class probabilities
+        n_total_classes : int, total number of classes in dataset
 
-    Vracia
-    ------
-    dict s kľúčmi:
+        Returns
+        -------
+        dict with keys:
       Accuracy, Weighted_F1, Macro_F1, Kappa, AUC, RWA_Score,
       G_Mean, Majority_Class, Majority_Recall, Minority_Classes,
       Mean_Minority_F1, Worst_Minority_F1,
@@ -86,7 +82,7 @@ def compute_main_metrics(y_true, y_pred, y_proba, n_total_classes):
     })
     df_min = df_cls[df_cls["class"] != majority_class]
 
-    # ── Minority / majority štatistiky ────────────────────────────────────
+    # Minority / majority statistics
     maj_row = df_cls[df_cls["class"] == majority_class]
     majority_recall = float(maj_row["recall"].values[0]) if len(maj_row) > 0 else 0.0
 
@@ -99,11 +95,10 @@ def compute_main_metrics(y_true, y_pred, y_proba, n_total_classes):
         mean_minority_f1 = worst_minority_f1 = 0.0
         mean_minority_recall = worst_minority_recall = 0.0
 
-    # ── G-Mean (Geometric Mean of per-class recalls) ───────────────────────
-    # Štandard imbalanced learning literatúry (Kubat & Matwin 1997).
-    # Pre multiclass = geometrický priemer recallov VŠETKÝCH tried.
-    # Pre binárny = √(Recall_majority × Recall_minority).
-    # Ak je recall akejkoľvek triedy = 0, G-Mean = 0.
+    # G-Mean (Geometric Mean of per-class recalls)
+    # For multiclass: geometric mean of recalls of ALL classes.
+    # For binary: sqrt(Recall_majority x Recall_minority).
+    # If recall of any class is 0, G-Mean = 0.
     all_recalls = [majority_recall] + list(df_min["recall"].values) if len(df_min) > 0 else [majority_recall]
     if all(r > 0 for r in all_recalls):
         g_mean = float(np.prod(all_recalls) ** (1.0 / len(all_recalls)))

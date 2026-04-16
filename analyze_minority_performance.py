@@ -70,7 +70,7 @@ def analyze_results():
     ensure_dirs()
 
     if not os.path.exists(RAW_RESULTS_FILE):
-        print(f"Chyba: Súbor '{RAW_RESULTS_FILE}' neexistuje.")
+        print(f"Error: File '{RAW_RESULTS_FILE}' does not exist.")
         return
 
     df_raw = pd.read_csv(RAW_RESULTS_FILE)
@@ -90,7 +90,7 @@ def analyze_results():
         preds_path = os.path.join(PREDICTIONS_DIR, preds_filename)
 
         if not os.path.exists(preds_path):
-            print(f"Varovanie: chýbajú predikcie pre {preds_filename}")
+            print(f"Warning: missing predictions for {preds_filename}")
             continue
 
         with np.load(preds_path, allow_pickle=True) as data:

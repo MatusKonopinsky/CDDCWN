@@ -1,19 +1,15 @@
 """
-utils/model_factory.py — Definícia a konštrukcia modelov pre experimenty.
+Model definitions and construction for experiments.
 
-Exportované funkcie:
-  get_model_name(model) -> (str, dict)   — názov + parametre modelu
-  get_model_configs(run_id, n_features)  — zoznam modelov pre jeden beh
+Models:
+    1. DDCW            - main proposed model
+    2. ARF             - AdaptiveRandomForest (state-of-the-art streaming ensemble)
+    3. OzaBaggingADWIN - OzaBagging + ADWIN drift detector
+    4. LevBag          - LeveragingBagging (strong diverse ensemble)
+    5. OnlineBoosting  - OnlineBoostingClassifier, online AdaBoost (Oza & Russell 2005)
+    6. HoeffdingTree   - simple streaming tree (strong single-model baseline)
 
-Modely (po konzultácii):
-  1. DDCW          — hlavný navrhovaný model
-  2. ARF            — AdaptiveRandomForest (state-of-the-art streaming ensemble)
-  3. OzaBaggingADWIN — OzaBagging + ADWIN drift detektor
-  4. LevBag         — LeveragingBagging (silný diverzitný ensemble)
-  5. OnlineBoosting — OnlineBoostingClassifier, online AdaBoost (Oza & Russell 2005)
-  6. HoeffdingTree  — jednoduchý streaming strom (silný single-model baseline)
-
-Seedy sú odvodené od run_id → reprodukovateľné ale rôzne naprieč behmi.
+Seeds are derived from run_id.
 """
 
 from skmultiflow.trees import (
@@ -48,7 +44,7 @@ try:
 except Exception:
     HAS_ADABOOST = False
 
-from model.configurable_ddcw_new import Configurable_DDCW
+from model.configurable_ddcw import Configurable_DDCW
 
 
 def get_model_name(model):
@@ -71,10 +67,10 @@ def get_model_name(model):
 
 def get_model_configs(run_id=1, n_features=None):
     """
-    Vracia zoznam modelov pre jeden beh experimentu.
+    Return the list of models for one experiment run.
 
-    n_features : int alebo None
-        Ak >= 50, NaiveBayes sa vynechá z DDCW poolu (overflow pri 54+ príznakoch).
+    n_features : int or None
+        If >= 50, NaiveBayes is removed from DDCW pool (overflow at 54+ features).
     """
     if n_features is not None and n_features >= 50:
         estimators_hetero = [
@@ -95,7 +91,7 @@ def get_model_configs(run_id=1, n_features=None):
 
     models = []
 
-    # ── 1) DDCW ───────────────────────────────────────────────────────────────
+    # 1) DDCW
     models.append(Configurable_DDCW(
         base_estimators=estimators_hetero,
         period=600,
@@ -122,19 +118,18 @@ def get_model_configs(run_id=1, n_features=None):
         random_state=400 + run_id,
     ))
 
-    # ── 2) ARF ────────────────────────────────────────────────────────────────
-    # State-of-the-art streaming ensemble. Každý strom má vlastný ADWIN detektor.
+    # 2) ARF
+    # State-of-the-art streaming ensemble. Each tree has its own ADWIN detector.
     if HAS_ARF:
         models.append(AdaptiveRandomForestClassifier(
             n_estimators=10,
             random_state=600 + run_id,
         ))
 
-    # ── 3) OzaBagging ─────────────────────────────────────────────────────────
-    # Klasický streaming bagging (Oza & Russell 2001). Každá vzorka sa trénuje
-    # k-krát podľa Poisson(1) rozdelenia. Silný všeobecný baseline.
-    # ── 3) OzaBagging + ADWIN ─────────────────────────────────────────────────
-    # OzaBagging rozšírený o ADWIN drift detektor — konzistentné s ARF.
+    # 3) OzaBagging
+    # Each sample is trained k times according to Poisson(1) distribution. Strong general baseline.
+    # 3) OzaBagging + ADWIN
+    # OzaBagging extended with ADWIN drift detector - consistent with ARF.
     if HAS_OZA:
         models.append(OzaBaggingADWINClassifier(
             base_estimator=HoeffdingTreeClassifier(),
@@ -142,8 +137,8 @@ def get_model_configs(run_id=1, n_features=None):
             random_state=700 + run_id,
         ))
 
-    # ── 4) LeveragingBagging ──────────────────────────────────────────────────
-    # Silný diverzitný ensemble — leveraging váhy zvyšujú diverzitu členov.
+    # 4) LeveragingBagging
+    # Strong diverse ensemble - leveraging weights increase member diversity.
     if HAS_LEV:
         models.append(LeveragingBaggingClassifier(
             base_estimator=HoeffdingTreeClassifier(),
@@ -151,9 +146,8 @@ def get_model_configs(run_id=1, n_features=None):
             random_state=800 + run_id,
         ))
 
-    # ── 5) OnlineBoosting (AdaBoost pre dátové toky) ─────────────────────────
-    # Oza & Russell 2005 + ADWIN drift detektor. Vzorky dostávajú váhy podľa
-    # chybovosti predchádzajúcich klasifikátorov, simulované cez Poisson(lambda).
+    # 5) OnlineBoosting (AdaBoost for data streams)
+    # Samples receive weights based on previous classifier errors, simulated via Poisson(lambda).
     if HAS_ADABOOST:
         models.append(OnlineBoostingClassifier(
             base_estimator=HoeffdingTreeClassifier(),
@@ -161,9 +155,9 @@ def get_model_configs(run_id=1, n_features=None):
             random_state=900 + run_id,
         ))
 
-    # ── 6) HoeffdingTree ─────────────────────────────────────────────────────
-    # Jednoduchý single-model baseline. Hoeffding bound zaručuje štatisticky
-    # ekvivalentné rozdelenie ako pri neobmedzených dátach.
+    # 6) HoeffdingTree
+    # Simple single-model baseline. Hoeffding bound guarantees statistically
+    # equivalent behavior to training with unlimited data.
     models.append(HoeffdingTreeClassifier())
 
     return models

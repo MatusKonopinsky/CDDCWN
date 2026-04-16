@@ -1,43 +1,42 @@
 """
-utils/logger.py — Centralizovaný live dashboard logger pre paralelné experimenty.
+Centralized live dashboard logger for parallel experiments.
 
-Architektúra:
-  - Každý worker posiela správy do jednej multiprocessing.Queue
-  - Jediný _logger_process ich prijíma a vypisuje sekvenčne
-  - Dashboard sa aktualizuje cez ANSI escape sekvencie
+Architecture:
+    - Each worker sends messages to one multiprocessing.Queue
+    - A single _logger_process receives and prints them sequentially
+    - Dashboard is updated via ANSI escape sequences
 
-Typy správ (tuple):
-  ("start",     run_id, d_name, m_name)               — worker začal model
-  ("progress",  run_id, d_name, m_name, cur, total)   — priebeh (počet vzoriek)
-  ("done",      run_id, d_name, m_name, metrics, time) — model dokončený
-  ("error",     run_id, d_name, m_name, err_str)       — chyba workera
-  ("task_done", run_id, d_name)                        — celý dataset/run hotový
-  ("STOP",)                                            — ukončenie logger procesu
+Message types (tuple):
+    ("start",     run_id, d_name, m_name)               - worker started model
+    ("progress",  run_id, d_name, m_name, cur, total)   - progress (sample count)
+    ("done",      run_id, d_name, m_name, metrics, time) - model completed
+    ("error",     run_id, d_name, m_name, err_str)       - worker error
+    ("task_done", run_id, d_name)                        - full dataset/run completed
+    ("STOP",)                                            - terminate logger process
 
-Výzor výstupu:
+Output example:
   ✔  [SEA_Imb9010|run1]        DDCW_aug+drift          RWA=0.9955  F1=0.9389  MinF1=0.8915  Drift=0  312s
   ✔  [Agrawal_Imb9010|run1]    ARF                     RWA=0.1059  F1=0.4803  MinF1=0.0132  Drift=0  208s
   ────────────────────────────────────────────────────────────────────────────
   [rbf_drift_imb9010|run1]     LeveragingBaggingClas…  ████████░░  42%  21000/49500
   [MC_Abrupt_3C|run1]          DDCW_aug+drift          ███░░░░░░░  18%   9000/49500
-  Hotovo: 2/8  ████████░░░░░░░░  25%      2/8
+    Done: 2/8    ████████░░░░░░░░  25%      2/8
 """
 
 import sys
 import time
 
-# ── Konštanty ──────────────────────────────────────────────────────────────
-BAR_W   = 22   # šírka progress baru
-DS_W    = 24   # šírka stĺpca [dataset|run]
-MODEL_W = 26   # šírka stĺpca meno modelu
-TOTAL_W = 80   # šírka oddeľovacieho riadku
+# Constants
+BAR_W   = 22   # progress bar width
+DS_W    = 24   # [dataset|run] column width
+MODEL_W = 26   # model-name column width
+TOTAL_W = 80   # separator line width
 
 CLEAR_LINE = "\033[2K\r"
 CURSOR_UP  = "\033[{}A"
 
 
-# ── Helpers ────────────────────────────────────────────────────────────────
-
+# Helpers
 def _bar(cur, tot, width=BAR_W):
     p   = min(1.0, cur / max(1, tot))
     f   = int(width * p)
@@ -46,29 +45,27 @@ def _bar(cur, tot, width=BAR_W):
 
 
 def _trunc(s, n):
-    """Skráti reťazec na n znakov s '…' na konci."""
+    """Truncate string to n chars with trailing '...'"""
     return s if len(s) <= n else s[:n - 1] + "…"
 
 
-# ── Hlavný logger proces ───────────────────────────────────────────────────
-
+# Main logger process
 def _logger_process(queue, total_tasks):
     """
-    Beží v samostatnom procese. Prijíma správy z queue a udržiava
-    live dashboard v terminály pomocou ANSI escape sekvencií.
+    Runs in a separate process. Receives queue messages and keeps
+    a live terminal dashboard using ANSI escape sequences.
 
-    Opravený bug oproti pôvodnej verzii:
-      - _erase_dashboard() teraz správne neprepíše riadky keď sú sloty prázdne
-        (pôvodne pri height=2 kreslil separator+summary aj pri prázdnych slotoch,
-        čo spôsobovalo výpis samotných '───' riadkov bez obsahu)
-      - Dashboard sa nevykreslí znovu ak sa nič nezmenilo (progress throttling)
+    Bug fix compared to the original version:
+        - _erase_dashboard() now correctly avoids overwriting lines when slots are empty
+          (previously, at height=2 it drew separator+summary even with empty slots,
+          which printed standalone '---' lines without content)
+        - Dashboard is not redrawn when nothing changed (progress throttling)
     """
     completed_tasks = 0
     slots      = {}   # key -> (d_name, run_id, m_name, cur, tot, start_ts)
-    slot_order = []   # zachovanie poradia pridania
+    slot_order = []   # keep insertion order
 
-    # ── Rendering ──────────────────────────────────────────────────────────
-
+    # Rendering
     def _slot_line(key):
         d_name, run_id, m_name, cur, tot, _ = slots[key]
         tag   = _trunc(f"[{d_name}|run{run_id}]", DS_W)
@@ -76,11 +73,11 @@ def _logger_process(queue, total_tasks):
         return f"  {tag:<{DS_W}}  {model:<{MODEL_W}}  {_bar(cur, tot)}"
 
     def _overall_line():
-        return f"  Hotovo: {completed_tasks}/{total_tasks}  {_bar(completed_tasks, total_tasks)}"
+        return f"  Done: {completed_tasks}/{total_tasks}  {_bar(completed_tasks, total_tasks)}"
 
     def _dash_height():
-        # separator + jeden riadok per slot + summary riadok
-        # Ak nie sú žiadne sloty, vykreslíme len separator + summary (výška=2)
+        # separator + one line per slot + summary line
+        # If there are no slots, render only separator + summary (height=2)
         return 1 + len(slot_order) + 1
 
     def _draw_dashboard():
@@ -100,16 +97,16 @@ def _logger_process(queue, total_tasks):
         sys.stdout.flush()
 
     def _emit_log_line(text):
-        """Vypíše trvalý log riadok NAD dashboard."""
+        """Print a persistent log line ABOVE the dashboard."""
         _erase_dashboard()
         sys.stdout.write(f"{text}\n")
         sys.stdout.flush()
         _draw_dashboard()
 
-    # Prvotné vykreslenie
+    # Initial render
     _draw_dashboard()
 
-    # ── Hlavná slučka ──────────────────────────────────────────────────────
+    # Main loop
     while True:
         msg  = queue.get()
         kind = msg[0]
@@ -118,7 +115,7 @@ def _logger_process(queue, total_tasks):
             _erase_dashboard()
             sys.stdout.write(f"{'─' * TOTAL_W}\n")
             sys.stdout.write(
-                f"  Všetky úlohy dokončené.  Hotovo: {completed_tasks}/{total_tasks}\n"
+                f"  All tasks completed.  Done: {completed_tasks}/{total_tasks}\n"
             )
             sys.stdout.flush()
             break
@@ -167,7 +164,7 @@ def _logger_process(queue, total_tasks):
             tag   = _trunc(f"[{d_name}|run{run_id}]", DS_W)
             model = _trunc(m_name, MODEL_W)
             _emit_log_line(
-                f"  ✘  {tag:<{DS_W}}  {model:<{MODEL_W}}  CHYBA: {err_str}"
+                f"  ✘  {tag:<{DS_W}}  {model:<{MODEL_W}}  ERROR: {err_str}"
             )
 
         elif kind == "task_done":
@@ -177,22 +174,21 @@ def _logger_process(queue, total_tasks):
             _draw_dashboard()
 
         elif kind == "log":
-            # Všeobecná textová správa (napr. z hlavného procesu)
+            # General text message (e.g. from main process)
             _, text = msg
             _emit_log_line(f"  ℹ  {text}")
 
 
-# ── Worker-side helpers ────────────────────────────────────────────────────
-
-# Globálna queue — nastavená cez _worker_init v každom worker procese
+# Worker-side helpers
+# Global queue - set via _worker_init in each worker process
 _LOG_QUEUE = None
 
 
 def worker_init(q):
     """
-    Pool initializer — každý worker zdedí queue cez túto funkciu.
-    Na Windows/spawn sa queue nemôže serializovať do task-tuplov,
-    ale cez initializer sa predáva správne cez dedičnosť procesu.
+    Pool initializer - each worker inherits queue through this function.
+    On Windows/spawn, queue cannot be serialized into task tuples,
+    but initializer passes it correctly through process inheritance.
     """
     global _LOG_QUEUE
     _LOG_QUEUE = q
@@ -200,9 +196,9 @@ def worker_init(q):
 
 def log(kind, *args):
     """
-    Odošle správu do centrálneho logger procesu.
-    Volajú workery namiesto priameho print().
-    Bezpečné — výnimky sa ignorujú, aby nespadol worker kvôli logu.
+    Send message to the central logger process.
+    Called by workers instead of direct print().
+    Safe - exceptions are ignored so workers don't fail due to logging.
     """
     if _LOG_QUEUE is not None:
         try:

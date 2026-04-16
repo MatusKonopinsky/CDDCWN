@@ -4,18 +4,18 @@ from collections import Counter
 
 def calculate_rwa(y_true, y_pred, y_classes=None):
     """
-    Vypočíta Rarity-based Weighted Accuracy (RWA).
+    Compute Rarity-based Weighted Accuracy (RWA).
 
-    Táto verzia je multi-class safe.
-    Väčšiu váhu dáva správnej klasifikácii vzácnejších tried.
+    This version is multi-class safe.
+    It assigns higher weight to correct classification of rarer classes.
 
-    Parametre:
-    - y_true: numpy pole true tried
-    - y_pred: numpy pole predikovaných tried
-    - y_classes: zoznam / pole všetkých tried, ktoré chceme zohľadniť
+    Parameters:
+    - y_true: numpy array of true classes
+    - y_pred: numpy array of predicted classes
+    - y_classes: list/array of all classes to consider
 
-    Návrat:
-    - float RWA skóre
+    Returns:
+    - float RWA score
     """
     y_true = np.asarray(y_true, dtype=int)
     y_pred = np.asarray(y_pred, dtype=int)
@@ -73,7 +73,7 @@ def calculate_rwa(y_true, y_pred, y_classes=None):
 
 
 if __name__ == '__main__':
-    print("--- Testovanie calculate_rwa ---")
+    print("--- Testing calculate_rwa ---")
 
     # binary test
     y_true_test = np.array([0, 0, 0, 0, 0, 0, 0, 0, 0, 1])

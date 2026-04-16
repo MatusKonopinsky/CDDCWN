@@ -1,13 +1,13 @@
 """
-run_experiments.py — Runner pre streamové experimenty s DDCW a baselinami.
+Runner for streaming experiments with DDCW and baselines.
 
-Využíva:
-  utils/logger.py        — live dashboard, queue komunikácia
-  utils/metrics.py       — výpočet RWA, F1, Kappa, AUC, minority metrík
-  utils/model_factory.py — definícia modelov a get_model_configs
-  utils/data_preprocesing.py — načítanie CSV datasetov
-  utils/rwa_metric.py    — RWA implementácia
-  model/configurable_ddcw_new.py — DDCW model
+Uses:
+    utils/logger.py        - live dashboard, queue communication
+    utils/metrics.py       - computation of RWA, F1, Kappa, AUC, minority metrics
+    utils/model_factory.py - model definitions and get_model_configs
+    utils/data_preprocesing.py - loading CSV datasets
+    utils/rwa_metric.py    - RWA implementation
+    model/configurable_ddcw_new.py - DDCW model
 """
 
 import os
@@ -32,25 +32,23 @@ from utils.model_factory import get_model_name, get_model_configs
 from utils.drift_metrics import compute_drift_stats
 
 
-# ============================================================
-# KONFIGURÁCIA
-# ============================================================
+# =============================================================================
+# CONFIGURATION
+# =============================================================================
 
-NUMBER_OF_RUNS = 5       # zvýš na 5 pre finálnu štatistickú validáciu
+NUMBER_OF_RUNS = 5       # increase to 5 for final statistical validation
 
 DATA_DIR    = "./data/"
 RESULTS_DIR = "./results/"
 
-# Počet vzoriek zo začiatku streamu použitých na inicializáciu modelu PRED
-# prequential hodnotením. Tieto vzorky sa nezarátavajú do metrík.
-# Hodnota 2000 bola overená ablačným testom — zlepšuje studený štart DDCW
-# na Agrawal a RBF bez regrésie na ostatných datasetoch.
+# Number of samples from the start of the stream used to initialize the model
+# BEFORE prequential evaluation. These samples are excluded from metrics.
 PRETRAIN_SIZE = 2000
 
 BLOCK_SIZE    = 500
 
 SYNTHETIC_DATASETS = {
-    # Binárne (imbalance 90/10)
+    # Binary (imbalance 90/10)
     "SEA_Imb9010":               "synthetic_imbalanced/sea_abrupt_imb9010.csv",
     "Agrawal_Imb9010":           "synthetic_imbalanced/agrawal_drift_imb9010.csv",
     "hyperplane_gradual_imb9010":"synthetic_imbalanced/hyperplane_gradual_imb9010.csv",
@@ -62,38 +60,38 @@ SYNTHETIC_DATASETS = {
     "MC_Reoccurring_3C_80155":   "synthetic_multiclass/mc_reoccurring_3c_80155.csv",
 }
 
-# Reálne datasety — výstupy z preprocess_real_datasets.py
-# Všetky sú vo formáte MinMaxScaled CSV bez hlavičky, posledný stĺpec = label.
-# Ak niektorý _clean.csv neexistuje, dataset sa preskočí s varovaním.
+# Real datasets - outputs from preprocess_real_datasets.py
+# All are in MinMaxScaled CSV format without header, last column = label.
+# If any _clean.csv is missing, the dataset is skipped with a warning.
 REAL_DATASETS = {
-    # Binárne
-    #"ELEC":     "real/real_clean/elec_clean.csv",      # 45 312 vzoriek, 6 príznakov, 2 triedy (~42/58)
-    #"KDD99":    "real/real_clean/kdd99_clean.csv",      # 494 021 vzoriek, 41 príznakov, 2 triedy (normal/attack)
-    #"Airlines": "real/real_clean/airlines_clean.csv",   # 539 383 vzoriek, 7 príznakov, 2 triedy
+    # Binary
+    "ELEC":     "real/real_clean/elec_clean.csv",      # 45,312 samples, 6 features, 2 classes (~42/58)
+    "KDD99":    "real/real_clean/kdd99_clean.csv",      # 494,021 samples, 41 features, 2 classes (normal/attack)
+    "Airlines": "real/real_clean/airlines_clean.csv",   # 539,383 samples, 7 features, 2 classes
     # Multiclass
-    #"Shuttle":  "real/real_clean/shuttle_clean.csv",    # 58 000 vzoriek, 9 príznakov, 7 tried (~80% trieda 0)
+    "Shuttle":  "real/real_clean/shuttle_clean.csv",    # 58,000 samples, 9 features, 7 classes (~80% class 0)
     # Text
-    #"Jigsaw":  "real/real_clean/jigsaw_clean.csv",
+    "Jigsaw":  "real/real_clean/jigsaw_clean.csv",
     "ElectCovid": "real/real_clean/elect_covid_clean.csv",
     "FakeNewsComb": "real/real_clean/comb_clean.csv",
 }
 
-# "synthetic"  — len syntetické datasety
-# "real"       — len reálne datasety
-# "all"        — všetky datasety
+# "synthetic"  - only synthetic datasets
+# "real"       - only real datasets
+# "all"        - all datasets
 DATASET_MODE = "real"
 
 
-# ============================================================
+# =============================================================================
 # WORKER
-# ============================================================
+# =============================================================================
 
 def _run_one_dataset(args):
     """
-    Worker: spracuje jeden (run_id, d_name) pár sekvenčne cez všetky modely.
-    Prijíma cestu k súboru namiesto numpy polí — vyhýba sa serializácii
-    veľkých polí (CovType 250MB, KDD99 160MB) cez spawn IPC na Windowse.
-    _LOG_QUEUE je nastavená cez worker_init, nie cez task tuple (Windows/spawn fix).
+    Worker: processes one (run_id, d_name) pair sequentially across all models.
+    Accepts a file path instead of numpy arrays to avoid serializing large
+    arrays (CovType 250MB, KDD99 160MB) via spawn IPC on Windows.
+    _LOG_QUEUE is set through worker_init, not via task tuple (Windows/spawn fix).
     """
     run_id, d_name, d_path, preds_dir = args
 
@@ -101,7 +99,7 @@ def _run_one_dataset(args):
     try:
         _, X_data, y_data = _read(d_path)
     except Exception as e:
-        log("error", run_id, d_name, "load", f"Načítanie zlyhalo: {e}")
+        log("error", run_id, d_name, "load", f"Loading failed: {e}")
         return [], []
 
     import warnings as _w
@@ -137,7 +135,7 @@ def _run_one_dataset(args):
             if hasattr(model, "reset"):
                 model.reset()
 
-            # ── Pretrain ───────────────────────────────────────────────────
+            # Pretrain
             if stream.n_remaining_samples() >= PRETRAIN_SIZE:
                 X_pre, y_pre = stream.next_sample(PRETRAIN_SIZE)
                 model.partial_fit(X_pre, y_pre, classes=stream.target_values)
@@ -145,11 +143,11 @@ def _run_one_dataset(args):
             n_total_classes  = stream.n_classes
             total_to_process = stream.n_remaining_samples()
 
-            # ── Prequential loop ───────────────────────────────────────────
+            # Prequential loop
             while stream.has_more_samples():
                 X_s, y_s = stream.next_sample()
 
-                # Predikcia
+                # Prediction
                 try:
                     proba = model.predict_proba(X_s)
                     pred  = int(np.argmax(proba[0]))
@@ -165,7 +163,7 @@ def _run_one_dataset(args):
                     proba = np.zeros((1, n_total_classes))
                     proba[0, pred] = 1.0
 
-                # Normalizácia pravdepodobností na celý rozsah tried
+                # Normalize probabilities to the full class range
                 full_proba = np.zeros(n_total_classes)
                 cp = np.asarray(proba[0])
                 full_proba[:len(cp)] = cp[:n_total_classes]
@@ -181,18 +179,18 @@ def _run_one_dataset(args):
                 model.partial_fit(X_s, y_s)
                 n_samples += 1
 
-                # Meranie veľkosti modelu každých 200 vzoriek
+                # Measure model size every 200 samples
                 if n_samples % 200 == 0:
                     try:
                         model_sizes.append(sys.getsizeof(pickle.dumps(model)))
                     except Exception:
                         pass
 
-                # Progress správa každých 5000 vzoriek
+                # Progress report every 5000 samples
                 if n_samples % 5000 == 0:
                     log("progress", run_id, d_name, m_name, n_samples, total_to_process)
 
-                # Uloženie blokových metrík každých BLOCK_SIZE vzoriek
+                # Save block metrics every BLOCK_SIZE samples
                 if len(block_y_true) >= BLOCK_SIZE:
                     bm = compute_main_metrics(
                         y_true=np.array(block_y_true,   dtype=int),
@@ -206,7 +204,7 @@ def _run_one_dataset(args):
                     })
                     block_y_true, block_y_pred, block_y_proba = [], [], []
 
-            # Posledný neúplný blok
+            # Final incomplete block
             if block_y_true:
                 bm = compute_main_metrics(
                     y_true=np.array(block_y_true,   dtype=int),
@@ -229,13 +227,13 @@ def _run_one_dataset(args):
             y_pred_arr  = np.array(y_pred_list,       dtype=int)
             y_proba_arr = np.array(y_proba_full_list, dtype=float)
 
-            # ── Finálne metriky ────────────────────────────────────────────
+            # Final metrics
             metrics = compute_main_metrics(
                 y_true=y_true_arr, y_pred=y_pred_arr,
                 y_proba=y_proba_arr, n_total_classes=n_total_classes,
             )
 
-            # ── Uloženie predikcií ─────────────────────────────────────────
+            # Save predictions
             drift_points = list(getattr(model, "_drift_points", []))
             save_dict = {"y_true": y_true_arr, "y_pred": y_pred_arr, "y_proba": y_proba_arr}
             if drift_points:
@@ -277,21 +275,21 @@ def _run_one_dataset(args):
     return result_rows, block_rows
 
 
-# ============================================================
-# HLAVNÝ LOOP
-# ============================================================
+# =============================================================================
+# MAIN LOOP
+# =============================================================================
 
 def run_experiments():
     os.makedirs(RESULTS_DIR, exist_ok=True)
     preds_dir = os.path.normpath(os.path.join(RESULTS_DIR, "predictions"))
     os.makedirs(preds_dir, exist_ok=True)
 
-    # ── Načítanie datasetov ────────────────────────────────────────────────
-    print("Nahrávam datasety...")
+    # Load datasets
+    print("Loading datasets...")
     loaded_datasets = {}
-    dataset_paths   = {}  # d_name -> absolútna cesta k _clean.csv
+    dataset_paths   = {}  # d_name -> absolute path to _clean.csv
 
-    # Výber datasetov podľa DATASET_MODE
+    # Select datasets by DATASET_MODE
     if DATASET_MODE == "synthetic":
         all_datasets = dict(SYNTHETIC_DATASETS)
     elif DATASET_MODE == "real":
@@ -299,36 +297,36 @@ def run_experiments():
     elif DATASET_MODE == "all":
         all_datasets = {**SYNTHETIC_DATASETS, **REAL_DATASETS}
     else:
-        raise ValueError(f"Neznámy DATASET_MODE: {DATASET_MODE!r}. Použi 'synthetic', 'real' alebo 'all'.")
+        raise ValueError(f"Unknown DATASET_MODE: {DATASET_MODE!r}. Use 'synthetic', 'real', or 'all'.")
 
-    print(f"  Režim: {DATASET_MODE!r}  ({len(all_datasets)} datasetov)")
+    print(f"  Mode: {DATASET_MODE!r}  ({len(all_datasets)} datasets)")
 
     for d_name, d_filename in all_datasets.items():
         file_path = os.path.join(DATA_DIR, d_filename)
         if not os.path.exists(file_path):
-            print(f"  VAROVANIE: {file_path} neexistuje, preskočené.")
+            print(f"  WARNING: {file_path} does not exist, skipped.")
             continue
         try:
             _, X, y = read_clean_csv(file_path)
             if X.shape[0] == 0:
-                print(f"  VAROVANIE: {d_name} je prázdny po načítaní, preskočené.")
+                print(f"  WARNING: {d_name} is empty after loading, skipped.")
                 continue
             loaded_datasets[d_name] = (X, y)
             dataset_paths[d_name]   = os.path.abspath(file_path)
-            print(f"  OK  {d_name:<35} {X.shape[0]:>7} vzoriek  "
-                  f"{X.shape[1]:>2} príznakov  triedy={sorted(set(y.astype(int)))}")
+            print(f"  OK  {d_name:<35} {X.shape[0]:>7} samples  "
+                  f"{X.shape[1]:>2} features  classes={sorted(set(y.astype(int)))}")
         except Exception as e:
-            print(f"  CHYBA pri načítaní {d_name}: {e}")
+            print(f"  ERROR loading {d_name}: {e}")
 
     total_tasks = len(dataset_paths) * NUMBER_OF_RUNS
     n_workers   = min(multiprocessing.cpu_count(), total_tasks)
 
     print(f"\n{'═' * 80}")
-    print(f"  Datasety: {len(loaded_datasets)}  |  Behy: {NUMBER_OF_RUNS}  |  "
-          f"Úlohy: {total_tasks}  |  Workery: {n_workers}")
+    print(f"  Datasets: {len(loaded_datasets)}  |  Runs: {NUMBER_OF_RUNS}  |  "
+          f"Tasks: {total_tasks}  |  Workers: {n_workers}")
     print(f"{'═' * 80}\n")
 
-    # ── Spustenie logger procesu ────────────────────────────────────────────
+    # Start logger process
     ctx = multiprocessing.get_context("spawn")
     log_queue   = ctx.Queue()
     logger_proc = ctx.Process(
@@ -338,10 +336,10 @@ def run_experiments():
     )
     logger_proc.start()
 
-    # ── Zostavenie úloh ────────────────────────────────────────────────────
-    # Odovzdávame cestu k súboru namiesto numpy polí — vyhneme sa serializácii
-    # veľkých polí (CovType 250MB, KDD99 160MB) cez spawn IPC na Windowse.
-    # Worker načíta dáta sám — každý worker má vlastnú kópiu v pamäti.
+    # Build tasks
+    # Pass file paths instead of numpy arrays to avoid serializing large arrays
+    # (CovType 250MB, KDD99 160MB) via spawn IPC on Windows.
+    # Worker loads data itself; each worker has its own in-memory copy.
     tasks = [
         (run_id, d_name, d_path, preds_dir)
         for run_id in range(1, NUMBER_OF_RUNS + 1)
@@ -363,25 +361,25 @@ def run_experiments():
     log_queue.put(("STOP",))
     logger_proc.join(timeout=10)
 
-    # ── Uloženie výsledkov ─────────────────────────────────────────────────
+    # Save results
     print(f"\n{'═' * 80}")
-    print("Ukladám výsledky...")
+    print("Saving results...")
 
     results_df = pd.DataFrame(all_results)
     results_df.to_csv(
         os.path.join(RESULTS_DIR, "grid_search_results_raw.csv"),
         index=False, float_format="%.6f",
     )
-    print(f"  Raw výsledky:     {RESULTS_DIR}grid_search_results_raw.csv")
+    print(f"  Raw results:      {RESULTS_DIR}grid_search_results_raw.csv")
 
     blocks_df = pd.DataFrame(all_block_rows)
     blocks_df.to_csv(
         os.path.join(RESULTS_DIR, "prequential_block_metrics.csv"),
         index=False, float_format="%.6f",
     )
-    print(f"  Blokové metriky:  {RESULTS_DIR}prequential_block_metrics.csv")
+    print(f"  Block metrics:    {RESULTS_DIR}prequential_block_metrics.csv")
 
-    # ── Drift + Stability štatistiky (post-hoc z blokových metrík) ────────
+    # Drift + stability statistics (post-hoc from block metrics)
     try:
         drift_stats_df = compute_drift_stats(blocks_df, preds_dir, block_size=BLOCK_SIZE)
         drift_stats_df.to_csv(
@@ -390,7 +388,7 @@ def run_experiments():
         )
         print(f"  Drift/Stability:  {RESULTS_DIR}drift_stability_stats.csv")
     except Exception as e:
-        print(f"  VAROVANIE: drift_stats zlyhali: {e}")
+        print(f"  WARNING: drift_stats failed: {e}")
 
     summary = results_df.groupby(["Dataset", "Model"]).agg(
         Avg_RWA=                  ("RWA_Score",             "mean"),
@@ -419,7 +417,7 @@ def run_experiments():
         os.path.join(RESULTS_DIR, "grid_search_summary.csv"),
         index=False, float_format="%.6f",
     )
-    print(f"  Súhrnné výsledky: {RESULTS_DIR}grid_search_summary.csv")
+    print(f"  Summary results:  {RESULTS_DIR}grid_search_summary.csv")
     print(f"{'═' * 80}\n")
     print(summary.sort_values(["Dataset", "Avg_RWA"], ascending=[True, False]).to_string(index=False))
 

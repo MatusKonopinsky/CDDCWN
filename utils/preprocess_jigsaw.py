@@ -1,28 +1,23 @@
 """
-preprocess_jigsaw.py
-────────────────────
-Predspracuje Jigsaw Toxic Comment dataset pre streamové experimenty.
+Preprocess Jigsaw Toxic Comment dataset for streaming experiments.
 
 Pipeline:
-  1. Načítanie a čistenie textu (lowercase, odstránenie špeciálnych znakov)
-  2. Načítanie PRETRAINED embedding modelu (gensim.downloader)
-  3. Výpočet TF-IDF váh pre každé slovo v korpuse
-  4. Reprezentácia každého komentára = TF-IDF vážený priemer pretrained vektorov
-  5. Uloženie ako clean CSV (MinMax škálované, bez hlavičky, posledný stĺpec = label)
+    1. Load and clean text (lowercase, remove special characters)
+    2. Load PRETRAINED embedding model (gensim.downloader)
+    3. Compute TF-IDF weights for each word in the corpus
+    4. Represent each comment as TF-IDF weighted mean of pretrained vectors
+    5. Save as clean CSV (MinMax scaled, no header, last column = label)
 
-Pretrained modely:
-  - "glove-twitter-100"       — 1.2M slov, 100d, Twitter (ideálny pre neformálne komentáre)
-  - "glove-wiki-gigaword-100" — 400k slov, 100d, Wikipedia + Gigaword (menší, formálnejší)
-  - "word2vec-google-news-300"— 3M slov, 300d, Google News (najväčšie pokrytie, 1.7GB)
+Pretrained models:
+    - "glove-twitter-100"       - 1.2M words, 100d, Twitter (ideal for informal comments)
+    - "glove-wiki-gigaword-100" - 400k words, 100d, Wikipedia + Gigaword (smaller, more formal)
+    - "word2vec-google-news-300"- 3M words, 300d, Google News (largest coverage, 1.7GB)
 
-Pre Jigsaw (toxic komentáre = neformálny internetový text) je glove-twitter
-najvhodnejší — pokrýva slang, skratky a vulgarizmy lepšie ako Wikipedia-based modely.
+For Jigsaw (toxic comments = informal internet text), glove-twitter is typically
+the best fit - it covers slang, abbreviations, and profanity better than Wikipedia-based models.
 
-Vstup:  ./data/real/real_text/train.csv
-Výstup: ./data/real/real_clean/jigsaw_clean.csv
-
-Spustenie:
-    python preprocess_jigsaw.py
+Input:  ./data/real/real_text/train.csv
+Output: ./data/real/real_clean/jigsaw_clean.csv
 """
 
 import os
@@ -33,16 +28,16 @@ from collections import defaultdict
 from sklearn.preprocessing import MinMaxScaler
 from typing import List, Dict
 
-# ── Parametre ─────────────────────────────────────────────────────────────────
+# Parameters
 RAW_PATH    = "./data/real/real_text/train.csv"
 OUT_PATH    = "./data/real/real_clean/jigsaw_clean.csv"
 TARGET_COL  = "toxic"
-MAX_SAMPLES = None            # None = všetky (~160k), napr. 100_000 pre rýchlejší beh
+MAX_SAMPLES = None            # None = all (~160k), e.g. 100_000 for faster runs
 
-# Pretrained embedding model (stiahne sa automaticky cez gensim.downloader)
-# Možnosti: "glove-twitter-100", "glove-twitter-200",
-#           "glove-wiki-gigaword-100", "glove-wiki-gigaword-300",
-#           "word2vec-google-news-300"
+# Pretrained embedding model (downloaded automatically via gensim.downloader)
+# Options: "glove-twitter-100", "glove-twitter-200",
+#          "glove-wiki-gigaword-100", "glove-wiki-gigaword-300",
+#          "word2vec-google-news-300"
 PRETRAINED_MODEL = "glove-twitter-100"
 
 RANDOM_STATE = 42
@@ -50,29 +45,29 @@ RANDOM_STATE = 42
 os.makedirs(os.path.dirname(OUT_PATH), exist_ok=True)
 
 
-# ── Text čistenie ──────────────────────────────────────────────────────────────
+# Text cleaning
 def clean_text(text: str) -> List[str]:
     """
-    Vyčistí komentár a vráti zoznam tokenov.
-    - lowercase (uncased) — pre toxic detection case nepomáha,
-      pretrained GloVe Twitter je tiež lowercase
-    - odstráni URL, čísla, špeciálne znaky
-    - zachová slová dlhšie ako 1 znak
+        Clean comment text and return token list.
+        - lowercase (uncased) - casing usually does not help toxic detection,
+            pretrained GloVe Twitter is also lowercase
+        - remove URLs, numbers, and special characters
+        - keep words longer than 1 character
     """
     text = str(text).lower()
     text = re.sub(r'http\S+|www\S+', ' ', text)       # URL
-    text = re.sub(r'[^a-z\s]', ' ', text)             # len písmená
+    text = re.sub(r'[^a-z\s]', ' ', text)             # letters only
     text = re.sub(r'\s+', ' ', text).strip()
     tokens = [t for t in text.split() if len(t) > 1]
     return tokens
 
 
-# ── TF-IDF váhy ───────────────────────────────────────────────────────────────
+# TF-IDF weights
 def compute_tfidf_weights(tokenized_docs: List[List[str]]) -> Dict[str, float]:
     """
-    Vypočíta TF-IDF váhy pre každé slovo v korpuse.
-    Vracia slovník {slovo: idf_váha} — TF sa počíta per-dokument pri embedovaní.
-    Používame IDF = log(N / df) kde df = počet dokumentov obsahujúcich slovo.
+    Compute TF-IDF weights for each word in the corpus.
+    Returns dict {word: idf_weight}; TF is computed per document during embedding.
+    Uses IDF = log(N / df), where df is number of documents containing the word.
     """
     N = len(tokenized_docs)
     df = defaultdict(int)
@@ -84,28 +79,28 @@ def compute_tfidf_weights(tokenized_docs: List[List[str]]) -> Dict[str, float]:
     return idf
 
 
-# ── Dokument → vektor (pretrained) ────────────────────────────────────────────
+# Document -> vector (pretrained)
 def doc_to_vector_pretrained(tokens: List[str], kv, idf_weights: Dict,
                              vector_size: int) -> np.ndarray:
     """
-    Konvertuje zoznam tokenov na dokument vektor pomocou TF-IDF váženého
-    priemeru pretrained embedding vektorov.
+    Convert token list to document vector using TF-IDF weighted
+    average of pretrained embedding vectors.
 
-    Parametre
-    ---------
-    tokens      : zoznam tokenov (lowercase)
+    Parameters
+    ----------
+    tokens      : token list (lowercase)
     kv          : gensim KeyedVectors (pretrained embeddings)
-    idf_weights : slovník {slovo: IDF váha}
-    vector_size : dimenzia vektorov
+    idf_weights : dict {word: IDF weight}
+    vector_size : embedding dimension
 
-    Vracia
-    ------
-    numpy vektor dĺžky vector_size
+    Returns
+    -------
+    numpy vector of length vector_size
     """
     if not tokens:
         return np.zeros(vector_size)
 
-    # Počítaj TF
+    # Compute TF
     tf = defaultdict(int)
     for token in tokens:
         tf[token] += 1
@@ -126,7 +121,7 @@ def doc_to_vector_pretrained(tokens: List[str], kv, idf_weights: Dict,
         total_weight += weight
 
     if total_weight == 0:
-        # Fallback: čistý priemer pre slová v slovníku
+        # Fallback: plain mean for in-vocabulary words
         in_vocab = [w for w in tokens if w in kv]
         if not in_vocab:
             return np.zeros(vector_size)
@@ -135,88 +130,88 @@ def doc_to_vector_pretrained(tokens: List[str], kv, idf_weights: Dict,
     return weighted_sum / total_weight
 
 
-# ── Hlavná funkcia ─────────────────────────────────────────────────────────────
+# Main function
 def preprocess_jigsaw():
     try:
         import gensim.downloader as api
     except ImportError:
-        print("CHYBA: gensim nie je nainštalovaný. Spusti: pip install gensim")
+        print("ERROR: gensim is not installed. Run: pip install gensim")
         return
 
-    # 1. Načítanie
-    print(f"\nNačítavam Jigsaw dataset z: {RAW_PATH}")
+    # 1. Loading
+    print(f"\nLoading Jigsaw dataset from: {RAW_PATH}")
     if not os.path.exists(RAW_PATH):
-        print(f"CHYBA: Súbor nenájdený: {RAW_PATH}")
+        print(f"ERROR: File not found: {RAW_PATH}")
         return
 
     df = pd.read_csv(RAW_PATH)
     df.dropna(subset=["comment_text", TARGET_COL], inplace=True)
-    print(f"  Načítaných riadkov: {len(df)}")
+    print(f"  Loaded rows: {len(df)}")
 
     if MAX_SAMPLES and len(df) > MAX_SAMPLES:
         df = df.iloc[:MAX_SAMPLES].copy()
-        print(f"  Orezané na: {MAX_SAMPLES} vzoriek")
+        print(f"  Truncated to: {MAX_SAMPLES} samples")
 
     y = df[TARGET_COL].values.astype(int)
-    print(f"  Distribúcia tried: {dict(zip(*np.unique(y, return_counts=True)))}")
+    print(f"  Class distribution: {dict(zip(*np.unique(y, return_counts=True)))}")
     print(f"  Minority (toxic=1): {y.mean()*100:.1f}%")
 
-    # 2. Tokenizácia
-    print("\nTokenizujem texty (uncased)...")
+    # 2. Tokenization
+    print("\nTokenizing texts (uncased)...")
     tokenized = [clean_text(text) for text in df["comment_text"].values]
     avg_len = np.mean([len(t) for t in tokenized])
-    print(f"  Priemerná dĺžka komentára: {avg_len:.1f} tokenov")
+    print(f"  Mean comment length: {avg_len:.1f} tokens")
 
-    # 3. Načítanie pretrained modelu
-    print(f"\nNačítavam pretrained model: {PRETRAINED_MODEL}")
-    print("  (Prvé spustenie stiahne model — môže trvať niekoľko minút)")
+    # 3. Load pretrained model
+    print(f"\nLoading pretrained model: {PRETRAINED_MODEL}")
+    print("  (First run will download the model - this may take a few minutes)")
     kv = api.load(PRETRAINED_MODEL)
     vector_size = kv.vector_size
     vocab_size = len(kv)
-    print(f"  Veľkosť slovníka: {vocab_size:,} slov")
-    print(f"  Dimenzia vektorov: {vector_size}")
+    print(f"  Vocabulary size: {vocab_size:,} words")
+    print(f"  Vector dimension: {vector_size}")
 
-    # Pokrytie korpusu pretrained modelom
+    # Corpus coverage by pretrained model
     all_tokens = set(t for doc in tokenized for t in doc)
     in_vocab = sum(1 for t in all_tokens if t in kv)
-    print(f"  Pokrytie unikátnych tokenov: {in_vocab}/{len(all_tokens)} "
+    print(f"  Unique token coverage: {in_vocab}/{len(all_tokens)} "
           f"({in_vocab/len(all_tokens)*100:.1f}%)")
 
-    # 4. TF-IDF váhy
-    print("\nPočítam TF-IDF váhy...")
+    # 4. TF-IDF weights
+    print("\nComputing TF-IDF weights...")
     idf_weights = compute_tfidf_weights(tokenized)
-    print(f"  Počet slov s IDF váhou: {len(idf_weights):,}")
+    print(f"  Words with IDF weights: {len(idf_weights):,}")
 
-    # 5. Dokument → vektor
-    print("\nKonvertujem komentáre na vektory (TF-IDF vážený priemer pretrained embeddings)...")
+    # 5. Document -> vector
+    print("\nConverting comments to vectors (TF-IDF weighted mean of pretrained embeddings)...")
     X = np.vstack([
         doc_to_vector_pretrained(tokens, kv, idf_weights, vector_size)
         for tokens in tokenized
     ])
-    print(f"  Výsledná matica: {X.shape}")
+    print(f"  Result matrix: {X.shape}")
 
-    # Kontrola pokrytia
+    # Coverage check
     zero_rows = np.all(X == 0, axis=1).sum()
-    print(f"  Dokumenty bez pokrytia (nulový vektor): {zero_rows} "
+    print(f"  Documents with no coverage (zero vector): {zero_rows} "
           f"({zero_rows/len(X)*100:.1f}%)")
 
-    # 6. MinMax škálovanie
-    print("\nŠkálujem príznaky (MinMax)...")
+    # 6. MinMax scaling
+    print("\nScaling features (MinMax)...")
     scaler = MinMaxScaler()
     X_scaled = scaler.fit_transform(X)
 
-    # 7. Uloženie
-    print(f"\nUkladám do: {OUT_PATH}")
+    # 7. Save output
+    print(f"\nSaving to: {OUT_PATH}")
     data = np.concatenate([X_scaled, y.reshape(-1, 1)], axis=1)
     np.savetxt(OUT_PATH, data, delimiter=",", fmt="%.8f")
 
     print(f"\n{'─'*60}")
-    print(f"  ✓  jigsaw               {X.shape[0]:>7} vzoriek  "
-          f"{X.shape[1]:>3} príznakov  "
-          f"triedy={sorted(set(y.astype(int)))}  → {OUT_PATH}")
+    print(f"    jigsaw               {X.shape[0]:>7} samples  "
+          f"{X.shape[1]:>3} features  "
+          f"classes={sorted(set(y.astype(int)))}  -> {OUT_PATH}")
     print(f"  Pretrained model: {PRETRAINED_MODEL} ({vector_size}d)")
     print(f"{'─'*60}")
-    print("\nHotovo. Pridaj 'Jigsaw' do REAL_DATASETS v runneri:")
+    print("\nDone. Add 'Jigsaw' to REAL_DATASETS in the runner:")
     print('  "Jigsaw": "real/real_clean/jigsaw_clean.csv"')
 
 

@@ -1,55 +1,20 @@
 """
-Configurable_DDCW v3 — vylepšená verzia s adaptívnou reguláciou.
+    Implementation of a drift-aware online ensemble classifier Configurable_DDCW
+    for imbalanced data streams. The file contains:
+    1. SimplePageHinkley: a lightweight concept-drift detector on the error stream.
+    2. Configurable_DDCW: an adaptive ensemble with expert weighting,
+       minority replay/augmentation, and majority-recall regulation.
 
-Zmeny oproti v2 (configurable_ddcw_new.py):
-──────────────────────────────────────────────
+Main features:
+    - soft voting with per-class expert weights,
+    - adaptive expert boosting/penalization based on imbalance ratio,
+    - replay and optional minority-class augmentation,
+    - post-drift cooldown logic and class-buffer handling,
+    - online sample-by-sample learning (partial_fit).
 
-1. SPÄTNOVÄZBOVÁ REGULÁCIA REPLAY intenzity:
-   - Nový sliding window sleduje majority recall v reálnom čase.
-   - Ak majority recall klesne pod kritický prah, replay sa automaticky
-     tlmí alebo úplne vypína. Toto zabraňuje "preklopeniu" modelu, kde
-     minority boost zničí majority presnosť (pozorované na Airlines, ELEC).
-   - Replay_k je dodatočne ohraničený logaritmom imbalance ratio —
-     pri mierne nevyvážených dátach (ratio < 2) sa replay prakticky vypne,
-     pri extrémnom imbalance (ratio > 10) funguje naplno.
-   - v3.1: Prahy pre majority recall sú ADAPTÍVNE podľa imbalance ratio.
-     Na mierne nevyvážených dátach (ratio < 3) striktné prahy (0.55/0.40).
-     Na extrémne nevyvážených (ratio > 8) voľné prahy (0.25/0.15).
-     Lineárna interpolácia v pásme 3–8. Riešenie problému kde v3.0
-     príliš utlmilo replay na Agrawal, Hyperplane a RBF.
-
-2. ADAPTÍVNA ASYMETRIA VÁH:
-   - Reward za správnu predikciu je adaptovaný podľa imbalance ratio.
-   - Mierny imbalance (ratio < 3): takmer symetrické (0.12/0.10).
-   - Extrémny imbalance (ratio > 8): silnejší minority boost (0.20/0.08).
-   - Penalty symetrizovaná (0.04 minority / 0.03 majority).
-   - Eliminuje double-boost efekt pri miernom imbalance,
-     zachováva potrebný boost pri extrémnom.
-
-3. SOFT VOTING v predict():
-   - Namiesto hard votes (expert hlasuje 1.0 pre predikovanú triedu)
-     sa používajú predict_proba pravdepodobnosti vážené per-class váhami.
-   - Zabraňuje extrémnym rozhodnutiam kde expert s 51% istotou
-     hlasuje rovnako ako expert s 99% istotou.
-
-4. AUGMENTÁCIA S DOLNÝM PRAHOM A MAJORITY FEEDBACK:
-   - Pri imbalance ratio < 2.0 sa augmentácia úplne vypína.
-   - Ak majority recall klesá pod adaptívny prah, augmentácia sa tlmí.
-
-5. MINIMUM SUPPORT PRE REPLAY:
-   - Triedy s menej ako min_replay_support vzorkami v class_buffer
-     sa vynechávajú z replay. Replay z 5-10 vzoriek vytvára len noise
-     cloud, nie užitočnú augmentáciu (pozorované na Shuttle triedy 5,6).
-
-6. WELFORDOV RUNNING STD:
-   - Namiesto periodického recompute cez np.vstack nad celým history
-     bufferom sa používa online Welfordov algoritmus.
-   - Cache interval zväčšený z 200 na 500 krokov.
-
-7. RÝCHLOSŤ:
-   - Diversity penalty len každých 50 krokov namiesto každý krok.
-   - Predikcia v fit_single_sample používa soft voting konzistentne
-     s predict() (eliminuje divergenciu train/test predikcie).
+Note:
+    The class is designed for stream-learning scenarios where data
+    distribution changes over time while robustness to class imbalance matters.
 """
 
 import copy as cp
@@ -71,19 +36,19 @@ from skmultiflow.neural_networks import PerceptronMask
 
 class SimplePageHinkley:
     """
-    Page-Hinkley drift detector nad error streamom.
-    value = 1.0 -> chyba,  value = 0.0 -> správna predikcia
+    Page-Hinkley drift detector on the error stream.
+    value = 1.0 -> error, value = 0.0 -> correct prediction
 
-    Parametre
-    ---------
-    delta     : citlivosť (čím menšie, tým citlivejšie na malé zmeny)
-    threshold : prah pre detekciu (čím väčšie, tým menej false-positive)
-    alpha     : faktor zabudania pre odhad priemeru chybovosti
-    min_detection_interval : minimálny počet vzoriek medzi dvoma detekciami.
-                             Detektor je po detekcii „hluchý" tento počet
-                             vzoriek, čo eliminuje kaskádové false-positive
-                             na datasetoch s kontinuálnym driftom (napr. RBF).
-                             Nahrádza potrebu manuálneho reset() po detekcii.
+    Parameters
+    ----------
+    delta     : sensitivity (smaller means more sensitive to subtle changes)
+    threshold : detection threshold (larger means fewer false positives)
+    alpha     : forgetting factor for estimated error rate mean
+    min_detection_interval : minimum number of samples between detections.
+                             After a detection, the detector is "deaf" for
+                             this many samples, which suppresses cascaded
+                             false positives on continuously drifting datasets
+                             (e.g., RBF). Replaces the need for manual reset().
     """
     def __init__(self, delta=0.005, threshold=100.0, alpha=0.999,
                  min_detection_interval=2000):
@@ -98,7 +63,7 @@ class SimplePageHinkley:
         self.cum_sum = 0.0
         self.min_cum_sum = 0.0
         self.t = 0
-        self._samples_since_last_detection = self.min_detection_interval  # začni aktívny
+        self._samples_since_last_detection = self.min_detection_interval  # start active
 
     def update(self, value):
         self.t += 1
@@ -108,12 +73,12 @@ class SimplePageHinkley:
         self.cum_sum += value - self.mean - self.delta
         self.min_cum_sum = min(self.min_cum_sum, self.cum_sum)
 
-        # Detekuj iba ak uplynul min_detection_interval od poslednej detekcie
+        # Detect only if min_detection_interval has passed since last detection
         if self._samples_since_last_detection < self.min_detection_interval:
             return False
 
         if (self.cum_sum - self.min_cum_sum) > self.threshold:
-            # Resetuj kumulatívny súčet a nastav čakanie — bez externého reset()
+            # Reset cumulative sum and enter waiting period without external reset()
             self.cum_sum = 0.0
             self.min_cum_sum = 0.0
             self._samples_since_last_detection = 0
@@ -145,7 +110,7 @@ class Configurable_DDCW(BaseSKMObject, ClassifierMixin, MetaEstimatorMixin):
         use_lifetime_trend=True,
         warmup_windows=2,
 
-        # nové parametre histórie
+        # new history parameters
         history_buffer_size=600,
         class_buffer_size=300,
 
@@ -156,12 +121,12 @@ class Configurable_DDCW(BaseSKMObject, ClassifierMixin, MetaEstimatorMixin):
         augmentation_strength=0.02,
         imbalance_aware_augmentation=True,
 
-        # v3: regulácia replay podľa majority recall
-        majority_recall_critical=0.55,   # pod týmto prahom sa replay tlmí
-        majority_recall_shutoff=0.40,    # pod týmto sa replay vypína úplne
-        min_replay_support=10,           # min vzoriek v class_buffer pre replay
+        # replay regulation by majority recall
+        majority_recall_critical=0.55,   # below this threshold replay is dampened
+        majority_recall_shutoff=0.40,    # below this value replay is fully disabled
+        min_replay_support=10,           # min samples in class_buffer for replay
 
-        # drift-aware logika
+        # drift-aware logic
         enable_drift_detector=False,
         drift_delta=0.005,
         drift_threshold=100.0,
@@ -207,7 +172,7 @@ class Configurable_DDCW(BaseSKMObject, ClassifierMixin, MetaEstimatorMixin):
         self.augmentation_strength = float(augmentation_strength)
         self.imbalance_aware_augmentation = bool(imbalance_aware_augmentation)
 
-        # v3 parametre
+        # parameters
         self.majority_recall_critical = float(majority_recall_critical)
         self.majority_recall_shutoff = float(majority_recall_shutoff)
         self.min_replay_support = int(min_replay_support)
@@ -236,27 +201,27 @@ class Configurable_DDCW(BaseSKMObject, ClassifierMixin, MetaEstimatorMixin):
         self._warmup_samples = None
         self._seen_samples = 0
 
-        # pre multiclass: buffer pre každú triedu zvlášť
+        # for multiclass: one buffer per class
         self.class_buffers = defaultdict(lambda: deque(maxlen=self.class_buffer_size))
 
         self._post_drift_remaining = 0
         self._drift_points = []
         self._drift_detector = None
 
-        # v3: sliding window pre odhad majority recall
+        # sliding window for majority-recall estimation
         self._recent_true = deque(maxlen=self.period)
         self._recent_preds = deque(maxlen=self.period)
 
-        # v3: Welfordov running std
+        # Welford running std
         self._welford_n = 0
         self._welford_mean = None
         self._welford_M2 = None
 
         self.reset()
 
-    # ============================================================
+    # =============================================================================
     # SAFE WRAPPERS
-    # ============================================================
+    # =============================================================================
 
     def _safe_predict(self, estimator, X):
         try:
@@ -276,9 +241,9 @@ class Configurable_DDCW(BaseSKMObject, ClassifierMixin, MetaEstimatorMixin):
             pass
         return None
 
-    # ============================================================
+    # =============================================================================
     # PARTIAL FIT
-    # ============================================================
+    # =============================================================================
 
     def partial_fit(self, X, y, classes=None, sample_weight=None):
         if classes is not None and self._classes is None:
@@ -295,14 +260,14 @@ class Configurable_DDCW(BaseSKMObject, ClassifierMixin, MetaEstimatorMixin):
 
         return self
 
-    # ============================================================
-    # PREDIKCIA — SOFT VOTING (v3)
-    # ============================================================
+    # =============================================================================
+    # SOFT VOTING
+    # =============================================================================
 
     def predict(self, X):
         """
-        Soft voting: namiesto hard votes používa predict_proba každého
-        experta, vážené per-class váhami. Zabraňuje extrémnym rozhodnutiam.
+        Soft voting: instead of hard votes, use each expert's predict_proba
+        weighted by per-class weights. This mitigates extreme decisions.
         """
         if not self.experts:
             return np.zeros(X.shape[0], dtype=int)
@@ -318,7 +283,7 @@ class Configurable_DDCW(BaseSKMObject, ClassifierMixin, MetaEstimatorMixin):
 
             p = self._safe_predict_proba(exp.estimator, X)
             if p is None:
-                # Fallback na hard vote ak estimator nemá predict_proba
+                # Fall back to hard vote when estimator lacks predict_proba
                 y_hat = self._safe_predict(exp.estimator, X)
                 if y_hat is None:
                     continue
@@ -376,9 +341,9 @@ class Configurable_DDCW(BaseSKMObject, ClassifierMixin, MetaEstimatorMixin):
         out /= row_sums
         return out
 
-    # ============================================================
+    # =============================================================================
     # HELPERS
-    # ============================================================
+    # =============================================================================
 
     def train_model(self, model, X, y, classes, sample_weight=None):
         if y is None or len(y) == 0:
@@ -429,10 +394,9 @@ class Configurable_DDCW(BaseSKMObject, ClassifierMixin, MetaEstimatorMixin):
             return 1.0
         return float(np.max(present) / max(1, np.min(present)))
 
-    # ── v3: Welfordov running std (nahradenie periodického np.vstack) ────
-
+    # Welford running std (replaces periodic np.vstack)
     def _welford_update(self, x_row):
-        """Online update running mean a variance (Welfordov algoritmus)."""
+        """Online update of running mean and variance (Welford algorithm)."""
         x = x_row.flatten().astype(float)
         if self._welford_mean is None:
             self._welford_n = 1
@@ -447,8 +411,8 @@ class Configurable_DDCW(BaseSKMObject, ClassifierMixin, MetaEstimatorMixin):
 
     def _local_feature_std(self):
         """
-        Vráti running std z Welfordovho algoritmu.
-        Cache interval 500 krokov — std sa prepočíta len keď je stale.
+        Return running std from the Welford algorithm.
+        Cache interval is 500 steps; std is recomputed only when stale.
         """
         if hasattr(self, '_cached_std_step') and self._seen_samples - self._cached_std_step < 500:
             return self._cached_std
@@ -464,13 +428,12 @@ class Configurable_DDCW(BaseSKMObject, ClassifierMixin, MetaEstimatorMixin):
         self._cached_std_step = self._seen_samples
         return std
 
-    # ── v3: Odhad majority recall zo sliding window ──────────────────────
-
+    # Estimate majority recall from sliding window
     def _estimate_majority_recall(self):
         """
-        Rýchly odhad majority recall z posledných period vzoriek.
-        Používa sa na reguláciu replay intenzity.
-        Vracia None ak ešte nie je dostatok dát (< 100 vzoriek).
+        Fast estimate of majority recall from the latest period samples.
+        Used to regulate replay intensity.
+        Returns None if there is not enough data yet (< 100 samples).
         """
         if len(self._recent_true) < 100:
             return None
@@ -487,29 +450,28 @@ class Configurable_DDCW(BaseSKMObject, ClassifierMixin, MetaEstimatorMixin):
 
         return float((pred_arr[maj_mask] == majority).sum() / n_maj)
 
-    # ── v3: Adaptívny replay_k s majority recall spätnou väzbou ─────────
-
+    # Adaptive replay_k with majority recall feedback
     def _adaptive_majority_thresholds(self):
         """
-        Prahy pre majority recall reguláciu adaptované podľa imbalance ratio.
+        Majority-recall regulation thresholds adapted by imbalance ratio.
 
-        Na mierne nevyvážených dátach (ratio < 3, napr. Airlines 55/45) sú
-        prahy striktné — majority recall nesmie klesnúť pod 0.55/0.40.
+        On mildly imbalanced data (ratio < 3, e.g. Airlines 55/45),
+        thresholds are strict and majority recall should not drop below 0.55/0.40.
 
-        Na extrémne nevyvážených dátach (ratio > 8, napr. RBF 90/10) sú
-        prahy výrazne voľnejšie — majority recall 0.25 je stále akceptovateľný,
-        pretože na takých dátach je ochrana minority dôležitejšia.
+        On extremely imbalanced data (ratio > 8, e.g. RBF 90/10),
+        thresholds are much looser; majority recall 0.25 can still be acceptable
+        because minority protection is more important on such data.
 
-        Lineárna interpolácia medzi dvoma režimami v pásme ratio 3–8.
+        Linear interpolation between both regimes in the 3-8 ratio range.
 
-        Vracia (critical, shutoff) tuple.
+        Returns a (critical, shutoff) tuple.
         """
         ratio = self._current_imbalance_ratio()
 
-        # Definícia režimov:
-        # Mierny imbalance (ratio <= 3): striktná ochrana majority
+        # Regime definitions:
+        # Mild imbalance (ratio <= 3): strict majority protection
         crit_low, shut_low = self.majority_recall_critical, self.majority_recall_shutoff
-        # Extrémny imbalance (ratio >= 8): voľná ochrana majority
+        # Extreme imbalance (ratio >= 8): loose majority protection
         crit_high, shut_high = 0.25, 0.15
 
         if ratio <= 3.0:
@@ -517,33 +479,33 @@ class Configurable_DDCW(BaseSKMObject, ClassifierMixin, MetaEstimatorMixin):
         elif ratio >= 8.0:
             return crit_high, shut_high
         else:
-            # Lineárna interpolácia
-            t = (ratio - 3.0) / 5.0  # 0.0 pri ratio=3, 1.0 pri ratio=8
+            # Linear interpolation
+            t = (ratio - 3.0) / 5.0  # 0.0 at ratio=3, 1.0 at ratio=8
             crit = crit_low + t * (crit_high - crit_low)
             shut = shut_low + t * (shut_high - shut_low)
             return crit, shut
 
     def _effective_replay_k(self):
         """
-        Replay intenzita regulovaná troma faktormi:
-        1. Imbalance ratio — logaritmický cap (ratio 2→k=1, 10→k=3, 100→k=6)
-        2. Majority recall feedback — tlmenie/vypnutie keď majority trpí,
-           s adaptívnymi prahmi podľa imbalance ratio
-        3. Post-drift boost
+          Replay intensity regulated by three factors:
+          1. Imbalance ratio - logarithmic cap (ratio 2->k=1, 10->k=3, 100->k=6)
+          2. Majority recall feedback - damp/disable when majority suffers,
+              with adaptive thresholds based on imbalance ratio
+          3. Post-drift boost
         """
         ratio = self._current_imbalance_ratio()
 
-        # Logaritmický cap: replay proporcionálny k závažnosti imbalance
+        # Logarithmic cap: replay proportional to imbalance severity
         max_k = max(1, int(np.log2(max(2.0, ratio))))
         k = min(self.replay_k, max_k)
 
-        # Adaptívna úprava podľa ratio
+        # Adaptive adjustment by ratio
         if ratio < 3.0:
             k = max(0, k - 1)
         elif ratio > 15.0:
             k = k + 1
 
-        # Spätná väzba z majority recall s adaptívnymi prahmi
+        # Majority recall feedback with adaptive thresholds
         maj_recall = self._estimate_majority_recall()
         if maj_recall is not None:
             crit, shut = self._adaptive_majority_thresholds()
@@ -552,25 +514,24 @@ class Configurable_DDCW(BaseSKMObject, ClassifierMixin, MetaEstimatorMixin):
             elif maj_recall < crit:
                 k = max(0, k // 2)
 
-        # Post-drift boost (ak nie je majority ohrozená)
+        # Post-drift boost (if majority is not threatened)
         if self._post_drift_remaining > 0 and k > 0:
             k += self.post_drift_replay_boost
 
         return max(0, int(k))
 
-    # ── v3: Augmentácia s dolným prahom ──────────────────────────────────
-
+    # Augmentation with a lower threshold
     def _effective_aug_strength(self):
         strength = self.augmentation_strength
 
         if self.imbalance_aware_augmentation:
             ratio = self._current_imbalance_ratio()
-            # Augmentácia sa vypína len pri nízkom imbalance (ratio < 2)
+            # Disable augmentation only at low imbalance (ratio < 2)
             if ratio < 2.0:
                 return 0.0
             strength *= min(3.0, 1.0 + 0.25 * max(0.0, ratio - 2.0))
 
-        # Ak majority recall je ohrozená, znížiť augmentáciu
+        # If majority recall is threatened, reduce augmentation
         maj_recall = self._estimate_majority_recall()
         if maj_recall is not None:
             crit, _ = self._adaptive_majority_thresholds()
@@ -658,14 +619,14 @@ class Configurable_DDCW(BaseSKMObject, ClassifierMixin, MetaEstimatorMixin):
                 new_buffers[int(cls)] = deque(tail, maxlen=self.class_buffer_size)
             self.class_buffers = new_buffers
 
-    # ============================================================
-    # v3: SOFT ENSEMBLE PREDIKCIA PRE TRAINING LOOP
-    # ============================================================
+    # =============================================================================
+    # SOFT ENSEMBLE PREDICTION FOR TRAINING LOOP
+    # =============================================================================
 
     def _soft_ensemble_predict(self, X, expert_probas):
         """
-        Soft ensemble predikcia z už-spočítaných predict_proba.
-        Konzistentná s predict() — eliminuje divergenciu train/test.
+        Soft ensemble prediction from already computed predict_proba values.
+        Consistent with predict() and avoids train/test divergence.
         """
         pred_agg = np.zeros(self.num_classes, dtype=float)
 
@@ -681,9 +642,9 @@ class Configurable_DDCW(BaseSKMObject, ClassifierMixin, MetaEstimatorMixin):
 
         return int(np.argmax(pred_agg))
 
-    # ============================================================
+    # =============================================================================
     # SINGLE SAMPLE UPDATE
-    # ============================================================
+    # =============================================================================
 
     def fit_single_sample(self, X, y, classes=None, sample_weight=None):
         t0 = time.time()
@@ -714,7 +675,7 @@ class Configurable_DDCW(BaseSKMObject, ClassifierMixin, MetaEstimatorMixin):
         self._history_buffer.append((X.copy(), y.copy()))
         self._y_window.append(true_c)
 
-        # v3: Welford update pre running std
+        # Welford update for running std
         self._welford_update(X)
 
         majority_class, minority_classes = self._get_majority_and_minorities()
@@ -722,9 +683,9 @@ class Configurable_DDCW(BaseSKMObject, ClassifierMixin, MetaEstimatorMixin):
         if majority_class is not None and true_c != majority_class:
             self.class_buffers[true_c].append((X.copy(), y.copy()))
 
-        # -----------------------------------------------------------------
-        # RÝCHLE ZÍSKANIE PREDIKCIÍ — SOFT VOTING (v3)
-        # -----------------------------------------------------------------
+        # =============================================================================
+        # FAST PREDICTION RETRIEVAL - SOFT VOTING
+        # =============================================================================
         expert_preds = []
         expert_probas = []
 
@@ -733,7 +694,7 @@ class Configurable_DDCW(BaseSKMObject, ClassifierMixin, MetaEstimatorMixin):
             y_hat = self._safe_predict(exp.estimator, X)
 
             if p is None and y_hat is not None:
-                # Vyrobíme one-hot proba z hard predikcie
+                # Build one-hot proba from hard prediction
                 p_fallback = np.zeros((1, self.num_classes), dtype=float)
                 c = int(np.clip(int(y_hat[0]), 0, self.num_classes - 1))
                 p_fallback[0, c] = 1.0
@@ -748,19 +709,19 @@ class Configurable_DDCW(BaseSKMObject, ClassifierMixin, MetaEstimatorMixin):
             expert_preds.append(y_hat)
             expert_probas.append(p)
 
-        # Soft ensemble predikcia konzistentná s predict()
+        # Soft ensemble prediction consistent with predict()
         ensemble_pred = self._soft_ensemble_predict(X, expert_probas)
         was_correct = (ensemble_pred == true_c)
 
-        # v3: Aktualizácia sliding window pre majority recall odhad
+        # Update sliding window for majority-recall estimate
         self._recent_true.append(true_c)
         self._recent_preds.append(ensemble_pred)
 
         self._update_drift_detector(was_correct)
 
-        # -----------------------------------------------------------------
-        # AKTUALIZÁCIA VÁH EXPERTOV — v3: zmiernená asymetria
-        # -----------------------------------------------------------------
+        # =============================================================================
+        # EXPERT WEIGHT UPDATE
+        # =============================================================================
         for i, exp in enumerate(self.experts):
             exp.lifetime += 1
             if exp.warmup_remaining > 0:
@@ -777,10 +738,10 @@ class Configurable_DDCW(BaseSKMObject, ClassifierMixin, MetaEstimatorMixin):
             is_minority_sample = (majority_class is not None and true_c != majority_class)
 
             if pred_c == true_c:
-                # Adaptívna asymetria podľa imbalance ratio:
-                # Pri miernom imbalance (ratio < 3): symetrické 0.12/0.10
-                # Pri extrémnom imbalance (ratio > 8): silnejšie 0.20/0.08
-                # Lineárna interpolácia medzi tým.
+                # Adaptive asymmetry by imbalance ratio:
+                # For mild imbalance (ratio < 3): symmetric 0.12/0.10
+                # For extreme imbalance (ratio > 8): stronger 0.20/0.08
+                # Linear interpolation in between.
                 ratio = self._current_imbalance_ratio()
                 if ratio <= 3.0:
                     min_rew, maj_rew = 0.12, 0.10
@@ -792,30 +753,30 @@ class Configurable_DDCW(BaseSKMObject, ClassifierMixin, MetaEstimatorMixin):
                     maj_rew = 0.10 + t * (0.08 - 0.10)
                 mult = 1.0 + self.beta * (min_rew if is_minority_sample else maj_rew)
             else:
-                # Penalty ostáva symetrická
+                # Penalty remains symmetric
                 mult = 1.0 - self.beta * (0.04 if is_minority_sample else 0.03)
 
             exp.weight_class[pred_c] = np.clip(exp.weight_class[pred_c] * mult, 1e-4, 1e4)
 
-        # v3: Diversity penalty len každých 50 krokov (rýchlosť)
+        # Apply diversity penalty only every 50 steps (speed)
         if not self.enable_diversity and len(self.experts) > 1 and self._seen_samples % 50 == 0:
             type_counts = Counter(e.model_type for e in self.experts)
             for e in self.experts:
                 penalty = 1.0 / np.sqrt(type_counts[e.model_type])
                 e.weight_class *= penalty
 
-        # -----------------------------------------------------------------
-        # UČENIE AKTUÁLNEHO VZORU
-        # -----------------------------------------------------------------
+        # =============================================================================
+        # LEARN CURRENT SAMPLE
+        # =============================================================================
         for exp in self.experts:
             exp.estimator = self.train_model(exp.estimator, X, y, self._classes, sample_weight)
 
-        # -----------------------------------------------------------------
-        # REPLAY / AUGMENTÁCIA — BATCHED s v3 reguláciou
-        # -----------------------------------------------------------------
+        # =============================================================================
+        # REPLAY / AUGMENTATION - BATCHED with regulation
+        # =============================================================================
         if self.replay_mode != "off":
-            # v3: min_replay_support filter — triedy s príliš málo vzorkami
-            #     sa vynechávajú (replay z 5 vzoriek len pridáva šum)
+            # min_replay_support filter - classes with too few samples
+            #     are skipped (replay from 5 samples only adds noise)
             valid_minorities = [
                 c for c in minority_classes
                 if c in self.class_buffers
@@ -843,16 +804,16 @@ class Configurable_DDCW(BaseSKMObject, ClassifierMixin, MetaEstimatorMixin):
                         X_replay_list.append(Xr)
                         y_replay_list.append(yr)
 
-                    # Jeden batched partial_fit per expert
+                    # One batched partial_fit per expert
                     X_batch = np.vstack(X_replay_list)
                     y_batch = np.concatenate(y_replay_list)
 
                     for exp in self.experts:
                         exp.estimator = self.train_model(exp.estimator, X_batch, y_batch, self._classes, sample_weight)
 
-        # -----------------------------------------------------------------
-        # VYČISTENIE A PRIDANIE EXPERTOV
-        # -----------------------------------------------------------------
+        # =============================================================================
+        # CLEANUP AND ADDING EXPERTS
+        # =============================================================================
         self.experts = [
             e for e in self.experts
             if float(np.sum(e.weight_class)) >= self.theta * self.num_classes
@@ -875,9 +836,9 @@ class Configurable_DDCW(BaseSKMObject, ClassifierMixin, MetaEstimatorMixin):
 
         return np.array([ensemble_pred])
 
-    # ============================================================
+    # =============================================================================
     # RESET + PARAMS
-    # ============================================================
+    # =============================================================================
 
     def reset(self):
         self.num_classes = 2
@@ -896,7 +857,7 @@ class Configurable_DDCW(BaseSKMObject, ClassifierMixin, MetaEstimatorMixin):
         self._post_drift_remaining = 0
         self._drift_points = []
 
-        # v3: reset sliding window a Welford
+        # reset sliding window and Welford
         self._recent_true = deque(maxlen=self.period)
         self._recent_preds = deque(maxlen=self.period)
         self._welford_n = 0

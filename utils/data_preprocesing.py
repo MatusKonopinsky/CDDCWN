@@ -1,24 +1,22 @@
 """
-utils/data_preprocesing.py
-──────────────────────────
-Načítavanie a predspracovanie datasetov pre streamové experimenty.
+Dataset loading and preprocessing for streaming experiments.
 
-Exportované funkcie:
-  read_clean_csv(filename)       — načítanie predspracovaného CSV (používa runner)
-  preprocess_all_real_datasets() — jednorazové predspracovanie raw reálnych datasetov
+Exported functions:
+    read_clean_csv(filename)       - load preprocessed CSV (used by runner)
+    preprocess_all_real_datasets() - one-time preprocessing of raw real datasets
 
-Reálne datasety sa predspracujú raz príkazom:
-    python -m utils.data_preprocesing
+Real datasets are preprocessed once with:
+        python -m utils.data_preprocesing
 
-Výstup: ./data/real/real_clean/<dataset>_clean.csv (MinMax škálované, bez hlavičky,
-        posledný stĺpec = integer label)
+Output: ./data/real/real_clean/<dataset>_clean.csv (MinMax scaled, no header,
+                last column = integer label)
 
-Očakávané raw súbory v ./data/real/real_raw/:
-    elec.csv                              — Electricity
-    kddcup.data_10_percent_corrected      — KDD99 (alebo kdd99.csv)
-    airlines.csv                          — Airlines
-    covtype.data / covtype.csv            — Forest CoverType
-    shuttle.trn + shuttle.tst             — Shuttle (alebo shuttle.csv)
+Expected raw files in ./data/real/real_raw/:
+        elec.csv                              - Electricity
+        kddcup.data_10_percent_corrected      - KDD99 (or kdd99.csv)
+        airlines.csv                          - Airlines
+        covtype.data / covtype.csv            - Forest CoverType
+        shuttle.trn + shuttle.tst             - Shuttle (or shuttle.csv)
 """
 
 import os
@@ -30,18 +28,17 @@ RAW_DIR  = "./data/real/real_raw/"
 OUT_DIR  = "./data/real/real_clean/"
 
 
-# ══════════════════════════════════════════════════════════════════════════════
-# FUNKCIA POUŽÍVANÁ RUNNEROM
-# ══════════════════════════════════════════════════════════════════════════════
-
+# =============================================================================
+# FUNCTION USED BY THE RUNNER
+# =============================================================================
 def read_clean_csv(filename):
     """
-    Načíta predspracovaný CSV súbor (bez hlavičky, posledný stĺpec = label).
-    Používa pandas namiesto np.loadtxt — rádovo rýchlejšie na veľkých datasetoch
-    (napr. CovType 581k, KDD99 494k).
-    Vracia (data, X, y) ako numpy polia.
+    Load preprocessed CSV (no header, last column = label).
+    Uses pandas instead of np.loadtxt - significantly faster on large datasets
+    (e.g. CovType 581k, KDD99 494k).
+    Returns (data, X, y) as numpy arrays.
     """
-    # Autodetekcia hlavičky — ak prvý riadok nie je číselný, preskočíme ho
+    # Header auto-detection - skip first row if it is not numeric
     try:
         first = pd.read_csv(filename, nrows=1, header=None).iloc[0, 0]
         has_header = isinstance(first, str) and not first.replace(".", "").lstrip("-").isdigit()
@@ -60,25 +57,24 @@ def read_clean_csv(filename):
     return data_np, X_np, y_np
 
 
-# ══════════════════════════════════════════════════════════════════════════════
-# INTERNÉ POMOCNÉ FUNKCIE PRE PREDSPRACOVANIE
-# ══════════════════════════════════════════════════════════════════════════════
-
+# =============================================================================
+# INTERNAL PREPROCESSING HELPERS
+# =============================================================================
 def _save_clean(X: np.ndarray, y: np.ndarray, name: str):
-    """MinMax škáluje X a uloží dataset do CSV bez hlavičky."""
+    """MinMax-scale X and save dataset to CSV without header."""
     scaler = MinMaxScaler()
     X_sc = scaler.fit_transform(X)
     data = np.concatenate([X_sc, y.reshape(-1, 1)], axis=1)
     os.makedirs(OUT_DIR, exist_ok=True)
     out_path = os.path.join(OUT_DIR, f"{name}_clean.csv")
     np.savetxt(out_path, data, delimiter=",", fmt="%.8f")
-    print(f"  ✓  {name:<20} {X.shape[0]:>7} vzoriek  "
-          f"{X.shape[1]:>2} príznakov  "
-          f"triedy={sorted(set(y.astype(int)))}  → {out_path}")
+    print(f"    {name:<20} {X.shape[0]:>7} samples  "
+          f"{X.shape[1]:>2} features  "
+          f"classes={sorted(set(y.astype(int)))}  -> {out_path}")
 
 
 def _encode_categoricals(df: pd.DataFrame) -> pd.DataFrame:
-    """Label-enkóduje všetky object stĺpce v DataFrame."""
+    """Label-encode all object columns in a DataFrame."""
     le = LabelEncoder()
     for col in df.columns:
         if df[col].dtype == object:
@@ -86,19 +82,18 @@ def _encode_categoricals(df: pd.DataFrame) -> pd.DataFrame:
     return df
 
 
-# ══════════════════════════════════════════════════════════════════════════════
-# PREDSPRACOVANIE JEDNOTLIVÝCH DATASETOV
-# ══════════════════════════════════════════════════════════════════════════════
-
+# =============================================================================
+# PREPROCESSING OF INDIVIDUAL DATASETS
+# =============================================================================
 def _process_elec():
     """
-    Electricity — 45 312 vzoriek, 6 príznakov, 2 triedy (~42/58).
-    Stĺpec 'date' je identifikátor, zahadzujeme ho.
+    Electricity - 45,312 samples, 6 features, 2 classes (~42/58).
+    Column 'date' is an identifier and is dropped.
     Label: UP=1 / DOWN=0.
     """
     path = os.path.join(RAW_DIR, "elec.csv")
     if not os.path.exists(path):
-        print(f"  SKIP elec — nenájdený: {path}")
+        print(f"  SKIP elec - not found: {path}")
         return
     df = pd.read_csv(path)
     if "date" in df.columns:
@@ -110,10 +105,10 @@ def _process_elec():
 
 def _process_kdd99():
     """
-    KDD Cup 99 — 10% verzia, ~494 021 vzoriek, 41 príznakov.
-    Konvertujeme na binárny problém: normal=0, attack=1.
-    3 kategorické stĺpce (protocol_type, service, flag) sú label-enkódované.
-    Niektoré verzie súboru majú bodku na konci labelu — automaticky ju odoberieme.
+    KDD Cup 99 - 10% version, ~494,021 samples, 41 features.
+    Converted to a binary problem: normal=0, attack=1.
+    3 categorical columns (protocol_type, service, flag) are label-encoded.
+    Some file variants have a trailing period in labels - removed automatically.
     """
     candidates = [
         "kddcup.data_10_percent_corrected",
@@ -125,8 +120,8 @@ def _process_kdd99():
     path = next((os.path.join(RAW_DIR, c) for c in candidates
                  if os.path.exists(os.path.join(RAW_DIR, c))), None)
     if path is None:
-        print(f"  SKIP kdd99 — nenájdený v {RAW_DIR}")
-        print(f"             skúšané: {candidates}")
+        print(f"  SKIP kdd99 - not found in {RAW_DIR}")
+        print(f"             tried: {candidates}")
         return
 
     col_names = [
@@ -143,7 +138,7 @@ def _process_kdd99():
         "dst_host_srv_rerror_rate","label",
     ]
 
-    # Zisti či súbor má hlavičku
+    # Detect whether the file has a header
     first_val = pd.read_csv(path, nrows=1, header=None).iloc[0, 0]
     has_header = isinstance(first_val, str) and first_val == "duration"
     df = pd.read_csv(path, names=col_names, header=0 if has_header else None)
@@ -151,7 +146,7 @@ def _process_kdd99():
 
     X = _encode_categoricals(df.iloc[:, :-1].copy()).values.astype(float)
 
-    # Binárny label: normal=0, attack=1 (bodka na konci niektorých verzií)
+    # Binary label: normal=0, attack=1 (some variants have trailing period)
     raw_labels = df["label"].astype(str).str.rstrip(".")
     y = (raw_labels != "normal").astype(int).values
     _save_clean(X, y, "kdd99")
@@ -159,12 +154,12 @@ def _process_kdd99():
 
 def _process_airlines():
     """
-    Airlines — 539 383 vzoriek, 7 príznakov, 2 triedy (delay/no-delay).
-    Kategorické: Airline, AirportFrom, AirportTo.
+    Airlines - 539,383 samples, 7 features, 2 classes (delay/no-delay).
+    Categorical: Airline, AirportFrom, AirportTo.
     """
     path = os.path.join(RAW_DIR, "airlines.csv")
     if not os.path.exists(path):
-        print(f"  SKIP airlines — nenájdený: {path}")
+        print(f"  SKIP airlines - not found: {path}")
         return
     df = pd.read_csv(path)
     df.dropna(inplace=True)
@@ -176,18 +171,18 @@ def _process_airlines():
 
 def _process_covtype():
     """
-    Forest CoverType — 581 012 vzoriek, 54 príznakov, 7 tried.
-    Niektoré verzie majú hlavičku (Elevation,...), iné nie.
-    Label je 1-based (1–7) → prekonvertujeme na 0-based (0–6).
+    Forest CoverType - 581,012 samples, 54 features, 7 classes.
+    Some variants include a header (Elevation,...), others do not.
+    Label is 1-based (1-7) -> converted to 0-based (0-6).
     """
     candidates = ["covtype.data", "covtype.csv", "covtype.data.gz"]
     path = next((os.path.join(RAW_DIR, c) for c in candidates
                  if os.path.exists(os.path.join(RAW_DIR, c))), None)
     if path is None:
-        print(f"  SKIP covtype — nenájdený v {RAW_DIR}")
+        print(f"  SKIP covtype - not found in {RAW_DIR}")
         return
 
-    # Autodetekcia hlavičky
+    # Header auto-detection
     try:
         first = pd.read_csv(path, nrows=1, header=None).iloc[0, 0]
         has_header = isinstance(first, str) and not first.replace(".", "").lstrip("-").isdigit()
@@ -201,16 +196,16 @@ def _process_covtype():
     X = df.iloc[:, :-1].values.astype(float)
     y = df.iloc[:, -1].values.astype(int)
     if y.min() == 1:
-        y = y - 1  # 1-based → 0-based
+        y = y - 1  # 1-based -> 0-based
     _save_clean(X, y, "covtype")
 
 
 def _process_shuttle():
     """
-    Shuttle — ~58 000 vzoriek, 9 príznakov, 7 tried (~80% trieda 0).
-    Spájame shuttle.trn + shuttle.tst ak existujú, inak shuttle.csv.
-    Prvý stĺpec je čas/identifikátor — zahadzujeme ho.
-    Label je 1-based (1–7) → 0-based (0–6).
+    Shuttle - ~58,000 samples, 9 features, 7 classes (~80% class 0).
+    Merge shuttle.trn + shuttle.tst when available, otherwise shuttle.csv.
+    First column is time/identifier and is dropped.
+    Label is 1-based (1-7) -> converted to 0-based (0-6).
     """
     dfs = []
     for fname in ["shuttle.trn", "shuttle.tst"]:
@@ -222,21 +217,21 @@ def _process_shuttle():
         for fname in ["shuttle.csv", "shuttle.data"]:
             p = os.path.join(RAW_DIR, fname)
             if os.path.exists(p):
-                # shuttle.csv z arff2csv má hlavičku
+                # shuttle.csv from arff2csv has a header
                 df_tmp = pd.read_csv(p)
-                # Zahod prípadný prvý stĺpec ak je to čas (numerický, monotónny)
+                # Drop possible first column if it is time (numeric, monotonic)
                 dfs.append(df_tmp)
                 break
 
     if not dfs:
-        print(f"  SKIP shuttle — nenájdený v {RAW_DIR}")
+        print(f"  SKIP shuttle - not found in {RAW_DIR}")
         return
 
     df = pd.concat(dfs, ignore_index=True)
     df.dropna(inplace=True)
     df = _encode_categoricals(df)
 
-    # Ak má prvý stĺpec monotónne rastúce hodnoty → je to index/čas, zahodíme
+    # If first column is monotonically increasing -> treat as index/time and drop
     first_col = df.iloc[:, 0].values.astype(float)
     is_time_col = np.all(np.diff(first_col[:1000]) >= 0) if len(first_col) > 1000 else False
     if is_time_col:
@@ -246,22 +241,21 @@ def _process_shuttle():
 
     y = df.iloc[:, -1].values.astype(int)
     if y.min() == 1:
-        y = y - 1  # 1-based → 0-based
+        y = y - 1  # 1-based -> 0-based
     _save_clean(X, y, "shuttle")
 
 
-# ══════════════════════════════════════════════════════════════════════════════
-# HLAVNÁ FUNKCIA — volá sa jednorazovo pred experimentmi
-# ══════════════════════════════════════════════════════════════════════════════
-
+# =============================================================================
+# MAIN FUNCTION - run once before experiments
+# =============================================================================
 def preprocess_all_real_datasets():
     """
-    Predspracuje všetky dostupné reálne datasety z ./data/real/.
-    Datasety ktoré nenájde, preskočí s varovaním.
+    Preprocess all available real datasets from ./data/real/.
+    Datasets not found are skipped with a warning.
     """
     os.makedirs(RAW_DIR, exist_ok=True)
     os.makedirs(OUT_DIR, exist_ok=True)
-    print(f"\nPreprocessing reálnych datasetov z: {os.path.abspath(RAW_DIR)}")
+    print(f"\nPreprocessing real datasets from: {os.path.abspath(RAW_DIR)}")
     print("─" * 70)
     _process_elec()
     _process_kdd99()
@@ -269,7 +263,7 @@ def preprocess_all_real_datasets():
     _process_covtype()
     _process_shuttle()
     print("─" * 70)
-    print("Hotovo.\n")
+    print("Done.\n")
 
 
 if __name__ == "__main__":

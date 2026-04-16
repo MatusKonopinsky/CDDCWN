@@ -1,25 +1,19 @@
 """
-generate_thesis_figures.py
-──────────────────────────
-Generuje grafy a tabuľky pre diplomovú prácu z výsledkov experimentov.
-Štýl grafov inšpirovaný článkom Sarnovský & Kolařík (2021), PeerJ CS.
+Generates plots and tables for the thesis from experiment results.
 
-Vstupy (z results/ adresára):
-  - grid_search_results_raw.csv
-  - grid_search_summary.csv
-  - prequential_block_metrics.csv
+Inputs (from the results/ directory):
+    - grid_search_results_raw.csv
+    - grid_search_summary.csv
+    - prequential_block_metrics.csv
 
-Výstupy (do results/figures/) — všetko .png:
-  - performance_synth_<metric>.png     — grid: všetky modely na syntetických ds
-  - performance_real_<metric>.png      — grid: všetky modely na reálnych ds
-  - ddcw_all_<metric>.png              — grid: DDCW vs HT baseline na všetkých
-  - showcase_<dataset>.png             — jeden dataset, viac metrík vedľa seba
-  - training_times.png                 — grouped bar chart
-  - summary_table.tex                  — LaTeX tabuľka s bold pre najlepšie
-  - times_table.tex                    — LaTeX tabuľka časov
-
-Spustenie:
-    python generate_thesis_figures.py
+Outputs (to results/figures/) - all .png:
+    - performance_synth_<metric>.png     - grid: all models on synthetic datasets
+    - performance_real_<metric>.png      - grid: all models on real datasets
+    - ddcw_all_<metric>.png              - grid: DDCW vs HT baseline on all streams
+    - showcase_<dataset>.png             - one dataset, multiple metrics side by side
+    - training_times.png                 - grouped bar chart
+    - summary_table.tex                  - LaTeX table with bold best values
+    - times_table.tex                    - LaTeX table of training times
 """
 
 import os, sys
@@ -29,10 +23,9 @@ import matplotlib
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 
-# ═══════════════════════════════════════════════════════════════════════════════
-# KONFIGURÁCIA
-# ═══════════════════════════════════════════════════════════════════════════════
-
+# =============================================================================
+# CONFIGURATION
+# =============================================================================
 RESULTS_DIR = "./results/"
 FIGURES_DIR = os.path.join(RESULTS_DIR, "figures/")
 os.makedirs(FIGURES_DIR, exist_ok=True)
@@ -47,7 +40,7 @@ MODEL_SHORT = {
     "HoeffdingTreeClassifier":        "HoeffdingTree",
 }
 
-# Farby a čiary — DDCW oranžová (plná hrubá), ARF modrá, ostatné tenšie
+# Colors and lines - DDCW orange, ARF blue, others thinner
 STYLE = {
     "DDCW":          {"color": "#d35400", "lw": 2.0, "ls": "-",  "zorder": 10},
     "ARF":           {"color": "#2980b9", "lw": 1.3, "ls": "-",  "zorder": 5},
@@ -61,7 +54,6 @@ _DFLT = {"color": "#34495e", "lw": 1.0, "ls": "-", "zorder": 1}
 REAL_NAMES = {"ELEC", "KDD99", "Airlines", "Shuttle", "CoverType", "Jigsaw"}
 DPI = 300
 
-# Akademický font štýl
 plt.rcParams.update({
     "font.family": "serif", "font.size": 9,
     "axes.titlesize": 10, "axes.labelsize": 9,
@@ -71,10 +63,9 @@ plt.rcParams.update({
     "axes.spines.top": False, "axes.spines.right": False,
 })
 
-# ═══════════════════════════════════════════════════════════════════════════════
+# =============================================================================
 # HELPERS
-# ═══════════════════════════════════════════════════════════════════════════════
-
+# =============================================================================
 def sn(name):
     if name.startswith("DDCW"): return "DDCW"
     return MODEL_SHORT.get(name, name[:20])
@@ -91,10 +82,9 @@ def load():
             d[k] = pd.read_csv(p); print(f"  OK  {f:<40} {len(d[k]):>7} rows")
     return d
 
-# ═══════════════════════════════════════════════════════════════════════════════
-# SUBPLOT: priebeh metriky, všetky modely, jeden dataset
-# ═══════════════════════════════════════════════════════════════════════════════
-
+# =============================================================================
+# SUBPLOT: metric trajectory, all models, one dataset
+# =============================================================================
 def _plot_ds(ax, blk, ds, metric, ylabel=True):
     sub = blk[blk["Dataset"]==ds].copy()
     if sub.empty: ax.text(.5,.5,"no data",transform=ax.transAxes,ha="center"); return
@@ -110,10 +100,9 @@ def _plot_ds(ax, blk, ds, metric, ylabel=True):
     if ylabel: ax.set_ylabel(metric.replace("_"," "))
     ax.set_ylim(bottom=max(0,ax.get_ylim()[0]))
 
-# ═══════════════════════════════════════════════════════════════════════════════
-# 1. PERFORMANCE GRID  (Figure 4/5 štýl)
-# ═══════════════════════════════════════════════════════════════════════════════
-
+# =============================================================================
+# 1. PERFORMANCE GRID
+# =============================================================================
 def perf_grid(blk, dsets, metric, fname, prefix=""):
     v=[d for d in dsets if d in blk["Dataset"].unique()]
     if not v: return
@@ -130,10 +119,9 @@ def perf_grid(blk, dsets, metric, fname, prefix=""):
     fig.savefig(os.path.join(FIGURES_DIR,fname),dpi=DPI); plt.close(fig)
     print(f"  ✓  {fname}")
 
-# ═══════════════════════════════════════════════════════════════════════════════
-# 2. DDCW vs BASELINE na všetkých streamoch
-# ═══════════════════════════════════════════════════════════════════════════════
-
+# =============================================================================
+# 2. DDCW vs BASELINE on all streams
+# =============================================================================
 def ddcw_grid(blk, metric, fname):
     df=blk.copy(); df["M"]=df["Model"].apply(sn)
     df=df[df["M"].isin(["DDCW","HoeffdingTree"])]
@@ -156,15 +144,14 @@ def ddcw_grid(blk, metric, fname):
     for i in range(n,nr*nc): r,c=divmod(i,nc); axes[r,c].set_visible(False)
     h,l=axes[0,0].get_legend_handles_labels()
     fig.legend(h,l,loc="lower center",ncol=2,frameon=True,bbox_to_anchor=(.5,-.01))
-    fig.suptitle(f"DDCW vs HoeffdingTree — {metric.replace('_',' ')}",
+    fig.suptitle(f"DDCW vs HoeffdingTree - {metric.replace('_',' ')}",
                  fontsize=11,fontweight="bold",y=1.01)
     fig.tight_layout(rect=[0,.04,1,1.]); fig.savefig(os.path.join(FIGURES_DIR,fname),dpi=DPI)
     plt.close(fig); print(f"  ✓  {fname}")
 
-# ═══════════════════════════════════════════════════════════════════════════════
-# 3. SHOWCASE — jeden dataset, viac metrík
-# ═══════════════════════════════════════════════════════════════════════════════
-
+# =============================================================================
+# 3. SHOWCASE - one dataset, multiple metrics
+# =============================================================================
 def showcase(blk, ds, mlist, fname):
     av=[m for m in mlist if m in blk.columns]
     if not av: return
@@ -173,15 +160,14 @@ def showcase(blk, ds, mlist, fname):
     for i,m in enumerate(av): _plot_ds(axes[i],blk,ds,m,ylabel=True)
     h,l=axes[0].get_legend_handles_labels()
     fig.legend(h,l,loc="lower center",ncol=min(6,len(l)),frameon=True,bbox_to_anchor=(.5,-.03))
-    fig.suptitle(f"Porovnanie modelov — {ds}",fontsize=11,fontweight="bold",y=1.02)
+    fig.suptitle(f"Model comparison - {ds}",fontsize=11,fontweight="bold",y=1.02)
     fig.tight_layout(rect=[0,.05,1,1.])
     fig.savefig(os.path.join(FIGURES_DIR,fname),dpi=DPI); plt.close(fig)
     print(f"  ✓  {fname}")
 
-# ═══════════════════════════════════════════════════════════════════════════════
-# 4. TRÉNINGOVÉ ČASY
-# ═══════════════════════════════════════════════════════════════════════════════
-
+# =============================================================================
+# 4. TRAINING TIMES
+# =============================================================================
 def times_chart(raw, fname):
     if "Total_Time_s" not in raw.columns: return
     df=raw.copy(); df["M"]=df["Model"].apply(sn)
@@ -191,16 +177,15 @@ def times_chart(raw, fname):
     colors=[st(c)["color"] for c in cols]
     fig,ax=plt.subplots(figsize=(12,5))
     piv.plot(kind="bar",ax=ax,width=.75,color=colors,edgecolor="white",linewidth=.5)
-    ax.set_ylabel("Priemerný čas (s)"); ax.set_title("Tréningové časy",fontweight="bold")
+    ax.set_ylabel("Mean time (s)"); ax.set_title("Training times",fontweight="bold")
     ax.legend(title="Model",bbox_to_anchor=(1.02,1),loc="upper left",frameon=True)
     plt.xticks(rotation=35,ha="right"); fig.tight_layout()
     fig.savefig(os.path.join(FIGURES_DIR,fname),dpi=DPI); plt.close(fig)
     print(f"  ✓  {fname}")
 
-# ═══════════════════════════════════════════════════════════════════════════════
-# 5–6. LATEX TABUĽKY
-# ═══════════════════════════════════════════════════════════════════════════════
-
+# =============================================================================
+# 5-6. LATEX TABLES
+# =============================================================================
 def latex_table(summ, fname):
     df=summ.copy(); df["M"]=df["Model"].apply(sn)
     cols=["Avg_RWA","Avg_G_Mean","Avg_Macro_F1","Avg_Weighted_F1","Avg_Mean_Minority_Recall"]
@@ -209,7 +194,7 @@ def latex_table(summ, fname):
     hdr={"Avg_RWA":"RWA","Avg_G_Mean":"G-Mean","Avg_Macro_F1":"Macro F1",
          "Avg_Weighted_F1":"W. F1","Avg_Mean_Minority_Recall":"Min. Rec."}
     L=["\\begin{table}[h]","\\centering",
-       "\\caption{Porovnanie výkonnosti modelov.}","\\label{tab:results_main}","\\small",
+       "\\caption{Model performance comparison.}","\\label{tab:results_main}","\\small",
        "\\begin{tabular}{ll"+"r"*len(av)+"}","\\toprule",
        "Dataset & Model & "+" & ".join(hdr.get(c,c) for c in av)+" \\\\","\\midrule"]
     prev=None
@@ -221,7 +206,7 @@ def latex_table(summ, fname):
             ds_s=ds if ds!=prev else ""
             vals=[]
             for c in av:
-                v=row[c]; s=f"{v:.4f}" if not pd.isna(v) else "—"
+                v=row[c]; s=f"{v:.4f}" if not pd.isna(v) else "-"
                 if not pd.isna(v) and abs(v-bests[c])<1e-6: s="\\textbf{"+s+"}"
                 vals.append(s)
             L.append(f"{ds_s} & {row['M']} & "+" & ".join(vals)+" \\\\"); prev=ds
@@ -237,39 +222,38 @@ def latex_times(raw,fname):
     piv=agg.pivot(index="Dataset",columns="M",values="Total_Time_s")
     ms=sorted(piv.columns,key=lambda x:(0 if x=="DDCW" else 1,x))
     L=["\\begin{table}[h]","\\centering",
-       "\\caption{Tréningové časy (s).}","\\label{tab:times}","\\small",
+       "\\caption{Training times (s).}","\\label{tab:times}","\\small",
        "\\begin{tabular}{l"+"r"*len(ms)+"}","\\toprule",
        "Dataset & "+" & ".join(ms)+" \\\\","\\midrule"]
     for ds in piv.index:
-        vs=[f"{piv.loc[ds,m]:.0f}" if m in piv.columns and not pd.isna(piv.loc[ds,m]) else "—" for m in ms]
+        vs=[f"{piv.loc[ds,m]:.0f}" if m in piv.columns and not pd.isna(piv.loc[ds,m]) else "-" for m in ms]
         L.append(f"{ds} & "+" & ".join(vs)+" \\\\")
     L+=["\\bottomrule","\\end{tabular}","\\end{table}"]
     p=os.path.join(FIGURES_DIR,fname)
     with open(p,"w",encoding="utf-8") as f: f.write("\n".join(L))
     print(f"  ✓  {fname}")
 
-# ═══════════════════════════════════════════════════════════════════════════════
+# =============================================================================
 # MAIN
-# ═══════════════════════════════════════════════════════════════════════════════
-
+# =============================================================================
 def main():
     print("="*65)
-    print("  Generovanie grafov — štýl Sarnovský & Kolařík (2021)")
+    print("  Generating plots  ")
     print("="*65)
-    print("\nNačítavam...")
+    print("\nLoading data...")
     data=load()
-    if not data: print("  Žiadne dáta."); sys.exit(1)
+    if not data: print("  No data found."); sys.exit(1)
 
     if "blocks" in data:
         blk=data["blocks"]
         a=sorted(blk["Dataset"].unique())
         sy=[d for d in a if d not in REAL_NAMES]
         re=[d for d in a if d in REAL_NAMES]
-        print("\n── Performance gridy ──")
+        print("\n── Performance grids ──")
         for m in METRICS:
             if m not in blk.columns: continue
-            if sy: perf_grid(blk,sy,m,f"performance_synth_{m.lower()}.png","Syntetické — ")
-            if re: perf_grid(blk,re,m,f"performance_real_{m.lower()}.png","Reálne — ")
+            if sy: perf_grid(blk,sy,m,f"performance_synth_{m.lower()}.png","Synthetic - ")
+            if re: perf_grid(blk,re,m,f"performance_real_{m.lower()}.png","Real - ")
         print("\n── DDCW vs baseline ──")
         for m in METRICS:
             if m in blk.columns: ddcw_grid(blk,m,f"ddcw_all_{m.lower()}.png")
@@ -278,11 +262,11 @@ def main():
         for ds in a: showcase(blk,ds,am,f"showcase_{ds.lower().replace(' ','_')}.png")
 
     if "raw" in data:
-        print("\n── Časy ──"); times_chart(data["raw"],"training_times.png")
+        print("\n── Times ──"); times_chart(data["raw"],"training_times.png")
     if "summary" in data:
-        print("\n── LaTeX tabuľky ──"); latex_table(data["summary"],"summary_table.tex")
+        print("\n── LaTeX tables ──"); latex_table(data["summary"],"summary_table.tex")
     if "raw" in data:
         latex_times(data["raw"],"times_table.tex")
-    print(f"\n{'='*65}\n  Hotovo. → {os.path.abspath(FIGURES_DIR)}\n{'='*65}")
+    print(f"\n{'='*65}\n  Done. Output saved to: {os.path.abspath(FIGURES_DIR)}\n{'='*65}")
 
 if __name__=="__main__": main()

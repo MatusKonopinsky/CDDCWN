@@ -13,9 +13,9 @@ from sklearn.datasets import make_classification
 from sklearn.preprocessing import MinMaxScaler
 
 
-# ============================================================
-# OUTPUT PRIEČINKY
-# ============================================================
+# =============================================================================
+# OUTPUT DIRECTORIES
+# =============================================================================
 
 DATA_DIR_BINARY = "./data/synthetic_imbalanced/"
 DATA_DIR_MULTI = "./data/synthetic_multiclass/"
@@ -31,9 +31,9 @@ imbalance_config_binary = {
 }
 
 
-# ============================================================
+# =============================================================================
 # BINARY DATASETY
-# ============================================================
+# =============================================================================
 
 def generate_with_target_counts(stream_like, target_counts, batch_size=50_000, max_batches=100):
     need_counts = dict(target_counts)
@@ -75,16 +75,16 @@ def generate_with_target_counts(stream_like, target_counts, batch_size=50_000, m
             return X_imb[idx], y_imb[idx], total_generated, counts
 
     raise RuntimeError(
-        f"Nepodarilo sa nazbierať dostatok vzoriek pre target_counts={target_counts} "
-        f"ani po {max_batches} batchoch."
+        f"Failed to collect enough samples for target_counts={target_counts} "
+        f"after {max_batches} batches."
     )
 
 
 def generate_binary_datasets():
-    print("Generujem binary datasety...")
+    print("Generating binary datasets...")
 
     # 1) SEA abrupt
-    print("Generujem silne nevyvážený SEA_Abrupt...")
+    print("Generating heavily imbalanced SEA_Abrupt...")
     stream_sea = SEAGenerator(classification_function=0, random_state=42)
 
     X_imb, y_imb, total_generated, counts = generate_with_target_counts(
@@ -98,12 +98,12 @@ def generate_binary_datasets():
     df_sea["class"] = y_imb
     df_sea.to_csv(os.path.join(DATA_DIR_BINARY, "sea_abrupt_imb9010.csv"), index=False)
 
-    print(f"Hotovo. (vygenerované spolu: {total_generated}, pool counts: {counts})")
+    print(f"Done. (total generated: {total_generated}, pool counts: {counts})")
     print(df_sea["class"].value_counts(normalize=True).sort_index())
     print()
 
     # 2) Agrawal drift
-    print("Generujem silne nevyvážený Agrawal s driftom...")
+    print("Generating heavily imbalanced Agrawal with drift...")
     stream1 = AGRAWALGenerator(classification_function=0, random_state=42)
     stream2 = AGRAWALGenerator(classification_function=1, random_state=42)
 
@@ -125,12 +125,12 @@ def generate_binary_datasets():
     df_agr["class"] = y_imb
     df_agr.to_csv(os.path.join(DATA_DIR_BINARY, "agrawal_drift_imb9010.csv"), index=False)
 
-    print(f"Hotovo. (vygenerované spolu: {total_generated}, pool counts: {counts})")
+    print(f"Done. (total generated: {total_generated}, pool counts: {counts})")
     print(df_agr["class"].value_counts(normalize=True).sort_index())
     print()
 
     # 3) Hyperplane gradual drift
-    print("Generujem silne nevyvážený Rotating Hyperplane...")
+    print("Generating heavily imbalanced Rotating Hyperplane...")
     hp_stream = HyperplaneGenerator(
         random_state=42,
         n_features=10,
@@ -150,12 +150,12 @@ def generate_binary_datasets():
     df_hp["class"] = y_imb
     df_hp.to_csv(os.path.join(DATA_DIR_BINARY, "hyperplane_gradual_imb9010.csv"), index=False)
 
-    print(f"Hotovo. (vygenerované spolu: {total_generated}, pool counts: {counts})")
+    print(f"Done. (total generated: {total_generated}, pool counts: {counts})")
     print(df_hp["class"].value_counts(normalize=True).sort_index())
     print()
 
     # 4) RBF drift
-    print("Generujem silne nevyvážený Random RBF drift...")
+    print("Generating heavily imbalanced Random RBF drift...")
     rbf_stream = RandomRBFGeneratorDrift(
         model_random_state=42,
         sample_random_state=42,
@@ -176,14 +176,14 @@ def generate_binary_datasets():
     df_rbf["class"] = y_imb
     df_rbf.to_csv(os.path.join(DATA_DIR_BINARY, "rbf_drift_imb9010.csv"), index=False)
 
-    print(f"Hotovo. (vygenerované spolu: {total_generated}, pool counts: {counts})")
+    print(f"Done. (total generated: {total_generated}, pool counts: {counts})")
     print(df_rbf["class"].value_counts(normalize=True).sort_index())
     print()
 
 
-# ============================================================
+# =============================================================================
 # MULTICLASS DATASETY
-# ============================================================
+# =============================================================================
 
 def normalize_weights(class_weights):
     w = np.array(class_weights, dtype=float)
@@ -274,7 +274,7 @@ def save_multiclass_dataset(X, y, filename):
     df["class"] = y.astype(int)
     df.to_csv(os.path.join(DATA_DIR_MULTI, filename), index=False)
 
-    print(f"\nUložené: {filename}")
+    print(f"\nSaved: {filename}")
     print("Shape:", df.shape)
     print("Class distribution:")
     print(df["class"].value_counts().sort_index())
@@ -434,7 +434,7 @@ def generate_mc_reoccurring_3c_80155():
 
 
 def generate_multiclass_datasets():
-    print("Generujem multiclass datasety...")
+    print("Generating multiclass datasets...")
     np.random.seed(42)
 
     generate_mc_abrupt_3c_70155()
@@ -447,6 +447,6 @@ if __name__ == "__main__":
     generate_binary_datasets()
     generate_multiclass_datasets()
 
-    print("\nHotovo.")
-    print("Binary datasety sú v:", DATA_DIR_BINARY)
-    print("Multiclass datasety sú v:", DATA_DIR_MULTI)
+    print("\nDone.")
+    print("Binary datasets saved to:", DATA_DIR_BINARY)
+    print("Multiclass datasets saved to:", DATA_DIR_MULTI)
