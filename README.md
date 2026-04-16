@@ -51,7 +51,7 @@ pip install -r requirements.txt
 ```
 
 **Datasets available at:**
-https://drive.google.com/file/d/1g1Pxy9myMbFNnTs81uwxJybpekbRkb1T/view?usp=sharing
+https://filebin.net/uq31ml73m89xsuta
 
 ---
 
