@@ -1,3 +1,13 @@
+"""
+Rarity-based Weighted Accuracy (RWA) metric implementation.
+
+The metric increases the contribution of correctly classified rare classes,
+which makes it suitable for imbalanced and multiclass stream evaluation.
+
+Exports:
+    - calculate_rwa(y_true, y_pred, y_classes=None) -> float
+"""
+
 import numpy as np
 from collections import Counter
 

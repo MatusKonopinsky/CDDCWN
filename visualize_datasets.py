@@ -1,3 +1,17 @@
+"""
+Visualize dataset dynamics for drift and class-imbalance inspection.
+
+For each dataset, this script creates:
+    - feature-importance-over-time view
+    - class-distribution-over-time view
+
+Outputs are written to:
+    - results/figures/
+
+Run:
+    python visualize_datasets.py
+"""
+
 import os
 import sys
 import numpy as np

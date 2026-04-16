@@ -1,3 +1,22 @@
+"""
+Analyze per-class and minority-class performance from experiment outputs.
+
+Inputs:
+    - results/grid_search_results_raw.csv
+    - results/predictions/*.npz
+
+Outputs (in results/minority_analysis/):
+    - multiclass_minority_overall_raw.csv
+    - multiclass_per_class_raw.csv
+    - multiclass_confusion_matrix_raw.csv
+    - multiclass_minority_summary.csv
+    - worst_cases_by_worst_minority_f1.csv
+    - confusion_matrices/*.png
+
+Run:
+    python analyze_minority_performance.py
+"""
+
 import os
 import numpy as np
 import pandas as pd

@@ -1,3 +1,18 @@
+"""
+Generate synthetic imbalanced datasets for streaming experiments.
+
+Produces:
+    - Binary 90/10 datasets with different drift patterns
+    - Multiclass datasets with abrupt, gradual, and reoccurring drift
+
+Output directories:
+    - data/synthetic_imbalanced/
+    - data/synthetic_multiclass/
+
+Run:
+    python generate_imbalanced_data.py
+"""
+
 import os
 import numpy as np
 import pandas as pd
