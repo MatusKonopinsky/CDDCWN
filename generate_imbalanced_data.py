@@ -55,49 +55,126 @@ balanced_config_binary = {
 # BINARY DATASETY
 # =============================================================================
 
-def generate_with_target_counts(stream_like, target_counts, batch_size=50_000, max_batches=100):
+def generate_with_target_counts(stream_like, target_counts, batch_size=50_000,
+                                max_batches=100, chunk_size=1000,
+                                preserve_order=True, random_state=42):
+    """
+    Pull samples from stream_like until we have enough of each class, then
+    downsample to the requested per-class counts.
+
+    For drift-aware generators (RBF, Hyperplane, ConceptDriftStream), set
+    preserve_order=True (default). The stream is split into chunks and each
+    chunk is individually rebalanced to the target ratio by downsampling the
+    majority class --- so the temporal ordering (and thus the drift signal)
+    is retained while the class ratio across the whole stream matches
+    target_counts.
+
+    For drift-free streams or experiments where time order does not matter,
+    preserve_order=False reproduces the legacy behaviour (global
+    make_imbalance + full permutation).
+    """
     need_counts = dict(target_counts)
+    n_classes = max(need_counts.keys()) + 1
+    total_needed = sum(need_counts.values())
 
     X_chunks = []
     y_chunks = []
-
     total_generated = 0
-    n_classes = max(need_counts.keys()) + 1
 
+    # Pull from the stream until we have at least total_needed samples and
+    # enough of each class.
     for _ in range(max_batches):
         Xb, yb = stream_like.next_sample(batch_size)
         X_chunks.append(Xb)
-        y_chunks.append(yb)
+        y_chunks.append(yb.astype(int))
         total_generated += len(yb)
 
-        y_all = np.concatenate(y_chunks).astype(int)
+        y_all = np.concatenate(y_chunks)
         counts = np.bincount(y_all, minlength=n_classes)
 
-        enough = True
-        for cls, need in need_counts.items():
-            if counts[cls] < need:
-                enough = False
-                break
-
-        if enough:
+        if all(counts[c] >= need for c, need in need_counts.items()) \
+                and total_generated >= total_needed:
             X_all = np.vstack(X_chunks)
             y_all = y_all.astype(int)
+            break
+    else:
+        raise RuntimeError(
+            f"Failed to collect enough samples for target_counts={target_counts} "
+            f"after {max_batches} batches."
+        )
 
-            X_imb, y_imb = make_imbalance(
-                X_all,
-                y_all,
-                sampling_strategy=need_counts,
-                random_state=42
-            )
+    if not preserve_order:
+        # Legacy path: global make_imbalance + permutation.
+        # Use only for streams without continuous drift where we explicitly
+        # do not want to preserve the temporal ordering.
+        X_imb, y_imb = make_imbalance(
+            X_all, y_all,
+            sampling_strategy=need_counts,
+            random_state=random_state,
+        )
+        rng = np.random.RandomState(random_state)
+        idx = rng.permutation(len(y_imb))
+        return X_imb[idx], y_imb[idx], total_generated, counts
 
-            rng = np.random.RandomState(42)
-            idx = rng.permutation(len(y_imb))
-            return X_imb[idx], y_imb[idx], total_generated, counts
+    # Drift-preserving path: downsample each chunk independently so that
+    # the target per-class ratio is enforced locally but the original time
+    # ordering of surviving samples is kept.
+    target_ratio = {c: need / total_needed for c, need in need_counts.items()}
+    per_chunk_targets = {
+        c: max(1, int(round(chunk_size * target_ratio[c])))
+        for c in need_counts
+    }
 
-    raise RuntimeError(
-        f"Failed to collect enough samples for target_counts={target_counts} "
-        f"after {max_batches} batches."
-    )
+    rng = np.random.RandomState(random_state)
+    X_out, y_out = [], []
+    accumulated = {c: 0 for c in need_counts}
+
+    n_total = len(y_all)
+    for start in range(0, n_total, chunk_size):
+        end = min(start + chunk_size, n_total)
+        Xc = X_all[start:end]
+        yc = y_all[start:end]
+
+        sel_indices = []
+        for cls, take_target in per_chunk_targets.items():
+            still_need = need_counts[cls] - accumulated[cls]
+            if still_need <= 0:
+                continue
+            cls_idx = np.where(yc == cls)[0]
+            if len(cls_idx) == 0:
+                continue
+            take = min(len(cls_idx), take_target, still_need)
+            if take <= 0:
+                continue
+            chosen = rng.choice(cls_idx, size=take, replace=False)
+            sel_indices.append(chosen)
+            accumulated[cls] += take
+
+        if not sel_indices:
+            continue
+
+        # Sort selected indices so that the local time order inside the chunk
+        # is preserved. This is the key difference vs. a global shuffle.
+        sel = np.sort(np.concatenate(sel_indices))
+        X_out.append(Xc[sel])
+        y_out.append(yc[sel])
+
+        if all(accumulated[c] >= need_counts[c] for c in need_counts):
+            break
+
+    X_final = np.vstack(X_out)
+    y_final = np.concatenate(y_out)
+
+    # If we hit the end of the buffered stream before reaching exact target
+    # counts on any class, trim (or warn) accordingly.
+    final_counts = np.bincount(y_final, minlength=n_classes)
+    for c, need in need_counts.items():
+        if final_counts[c] < need:
+            print(f"  WARN: class {c} undershoot "
+                  f"({final_counts[c]} < requested {need}). "
+                  "Consider increasing max_batches or batch_size.")
+
+    return X_final, y_final, total_generated, counts
 
 def generate_balanced_datasets():
     """
@@ -532,8 +609,8 @@ def generate_multiclass_datasets():
 
 if __name__ == "__main__":
     generate_balanced_datasets()
-    #generate_binary_datasets()
-    #generate_multiclass_datasets()
+    generate_binary_datasets()
+    generate_multiclass_datasets()
 
     print("\nDone.")
     print("Binary datasets saved to:", DATA_DIR_BINARY)

@@ -38,6 +38,8 @@ DATASETS = {
     "Agrawal_Imb9010":            "synthetic_imbalanced/agrawal_drift_imb9010.csv",
     "hyperplane_gradual_imb9010": "synthetic_imbalanced/hyperplane_gradual_imb9010.csv",
     "rbf_drift_imb9010":          "synthetic_imbalanced/rbf_drift_imb9010.csv",
+    "SEA_Bal":                "synthetic_imbalanced/sea_balanced.csv",
+    "Agrawal_Bal":            "synthetic_imbalanced/agrawal_balanced.csv",
     # Synthetic multiclass
     "MC_Abrupt_3C_70155":         "synthetic_multiclass/mc_abrupt_3c_70155.csv",
     "MC_Gradual_3C_70155":        "synthetic_multiclass/mc_gradual_3c_70155.csv",

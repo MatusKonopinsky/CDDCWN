@@ -227,7 +227,6 @@ def preprocess_all_real_datasets():
     _process_elec()
     _process_kdd99()
     _process_airlines()
-    _process_covtype()
     _process_shuttle()
     print("─" * 70)
     print("Done.\n")
