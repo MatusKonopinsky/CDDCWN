@@ -174,7 +174,7 @@ def plot_feature_importance(ax, imp_df, dataset_name):
 
     ax.set_xlabel("Samples")
     ax.set_ylabel("Feature index")
-    ax.set_title(f"({dataset_name}) Feature importance over time", fontweight="bold", fontsize=9)
+    ax.set_title(f"{dataset_name} — feature importance", fontweight="bold", fontsize=9)
 
 
 # =============================================================================
@@ -221,15 +221,23 @@ def plot_class_distribution(ax, dist_df, classes, dataset_name):
     for i, col in enumerate(cols):
         vals = dist_df[col].values
         ax.fill_between(x, bottom, bottom + vals, alpha=0.82,
-                        color=colors[i], label=f"Class {classes[i]}")
+                color=colors[i], label=f"Class {classes[i]}")
         ax.plot(x, bottom + vals, color=colors[i], linewidth=0.9, alpha=0.95)
         bottom += vals
 
     ax.set_xlabel("Samples")
     ax.set_ylabel("Class proportion")
-    ax.set_title(f"({dataset_name}) Class distribution", fontweight="bold", fontsize=9)
+    ax.set_title(dataset_name, fontweight="bold", fontsize=9)
     ax.set_ylim(0, 1.0)
-    ax.legend(loc="upper right", fontsize=6, ncol=min(4, len(classes)))
+    # Legenda mimo subplotu, napravo — nezakryje priebeh
+    ax.legend(
+        loc="center left",
+        bbox_to_anchor=(1.01, 0.5),
+        fontsize=6,
+        frameon=False,
+        title="Class",
+        title_fontsize=7,
+    )
 
 
 # =============================================================================
@@ -286,9 +294,13 @@ def generate_class_dist_grid(loaded, category, filename):
         r, c = divmod(idx, ncols)
         axes[r, c].set_visible(False)
 
-    fig.suptitle(f"Class distribution over time - {category}",
-                 fontsize=11, fontweight="bold", y=1.01)
-    fig.tight_layout(rect=[0, 0, 1, 1.0])
+    if "synth" in category.lower() or "Synthetic" in category:
+        title = "Class distribution over time — Synthetic datasets"
+    else:
+        title = "Class distribution over time — Real datasets"
+
+    fig.suptitle(title, fontsize=11, fontweight="bold", y=1.02)
+    fig.tight_layout(rect=[0, 0, 0.97, 1.0])
 
     path = os.path.join(FIGURES_DIR, filename)
     fig.savefig(path, dpi=DPI)
@@ -332,10 +344,10 @@ def main():
     print("\n── Grid: class distribution ──")
     if loaded_synth:
         generate_class_dist_grid(loaded_synth, "Synthetic datasets",
-                                 "class_dist_grid_synth.png")
+                                "class_dist_grid_synth.png")
     if loaded_real:
         generate_class_dist_grid(loaded_real, "Real datasets",
-                                 "class_dist_grid_real.png")
+                                "class_dist_grid_real.png")
 
     print(f"\n{'=' * 65}")
     print(f"  Done. Output saved to: {os.path.abspath(FIGURES_DIR)}")

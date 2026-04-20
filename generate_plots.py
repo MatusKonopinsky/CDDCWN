@@ -85,7 +85,7 @@ def load():
 # =============================================================================
 # SUBPLOT: metric trajectory, all models, one dataset
 # =============================================================================
-def _plot_ds(ax, blk, ds, metric, ylabel=True):
+def _plot_ds(ax, blk, ds, metric, ylabel=True, title=None):
     sub = blk[blk["Dataset"]==ds].copy()
     if sub.empty: ax.text(.5,.5,"no data",transform=ax.transAxes,ha="center"); return
     sub["M"] = sub["Model"].apply(sn)
@@ -96,7 +96,8 @@ def _plot_ds(ax, blk, ds, metric, ylabel=True):
                 linewidth=s["lw"],linestyle=s["ls"],zorder=s["zorder"])
         if m=="DDCW":
             ax.axhline(g["mean"].mean(),color=s["color"],lw=.6,ls=":",alpha=.45,zorder=s["zorder"]-1)
-    ax.set_title(ds,fontweight="bold",pad=4); ax.set_xlabel("Samples")
+    ax.set_title(title if title is not None else ds, fontweight="bold", pad=4)
+    ax.set_xlabel("Samples")
     if ylabel: ax.set_ylabel(metric.replace("_"," "))
     ax.set_ylim(bottom=max(0,ax.get_ylim()[0]))
 
@@ -112,10 +113,12 @@ def perf_grid(blk, dsets, metric, fname, prefix=""):
         r,c=divmod(i,nc); _plot_ds(axes[r,c],blk,ds,metric,ylabel=(c==0))
     for i in range(n,nr*nc): r,c=divmod(i,nc); axes[r,c].set_visible(False)
     h,l=axes[0,0].get_legend_handles_labels()
-    fig.legend(h,l,loc="lower center",ncol=min(6,len(l)),frameon=True,
-               fancybox=False,edgecolor="#ccc",bbox_to_anchor=(.5,-.02))
+    fig.legend(h, l,
+            loc="center left", bbox_to_anchor=(1.0, 0.5),
+            ncol=1, frameon=True, fancybox=False, edgecolor="#ccc",
+            title="Model", title_fontsize=8)
     fig.suptitle(f"{prefix}{metric.replace('_',' ')}",fontsize=11,fontweight="bold",y=1.01)
-    fig.tight_layout(rect=[0,.04,1,1.])
+    fig.tight_layout(rect=[0, 0, 0.88, 1.0])
     fig.savefig(os.path.join(FIGURES_DIR,fname),dpi=DPI); plt.close(fig)
     print(f"  ✓  {fname}")
 
@@ -143,10 +146,13 @@ def ddcw_grid(blk, metric, fname):
         ax.set_ylim(bottom=max(0,ax.get_ylim()[0]))
     for i in range(n,nr*nc): r,c=divmod(i,nc); axes[r,c].set_visible(False)
     h,l=axes[0,0].get_legend_handles_labels()
-    fig.legend(h,l,loc="lower center",ncol=2,frameon=True,bbox_to_anchor=(.5,-.01))
-    fig.suptitle(f"DDCW vs HoeffdingTree - {metric.replace('_',' ')}",
-                 fontsize=11,fontweight="bold",y=1.01)
-    fig.tight_layout(rect=[0,.04,1,1.]); fig.savefig(os.path.join(FIGURES_DIR,fname),dpi=DPI)
+    fig.legend(h, l,
+            loc="center left", bbox_to_anchor=(1.0, 0.5),
+            ncol=1, frameon=True,
+            title="Model", title_fontsize=8)
+    fig.suptitle(f"DDCW vs HoeffdingTree — {metric.replace('_',' ')}",
+                fontsize=11,fontweight="bold",y=1.01)
+    fig.tight_layout(rect=[0, 0, 0.88, 1.0])
     plt.close(fig); print(f"  ✓  {fname}")
 
 # =============================================================================
@@ -157,11 +163,15 @@ def showcase(blk, ds, mlist, fname):
     if not av: return
     n=len(av); fig,axes=plt.subplots(1,n,figsize=(n*4.8,3.8))
     if n==1: axes=[axes]
-    for i,m in enumerate(av): _plot_ds(axes[i],blk,ds,m,ylabel=True)
+    for i,m in enumerate(av):
+        _plot_ds(axes[i], blk, ds, m, ylabel=True, title=m.replace("_"," "))
     h,l=axes[0].get_legend_handles_labels()
-    fig.legend(h,l,loc="lower center",ncol=min(6,len(l)),frameon=True,bbox_to_anchor=(.5,-.03))
-    fig.suptitle(f"Model comparison - {ds}",fontsize=11,fontweight="bold",y=1.02)
-    fig.tight_layout(rect=[0,.05,1,1.])
+    fig.legend(h, l,
+            loc="center left", bbox_to_anchor=(1.0, 0.5),
+            ncol=1, frameon=True,
+            title="Model", title_fontsize=8)
+    fig.suptitle(f"Model comparison — {ds}", fontsize=11, fontweight="bold", y=1.02)
+    fig.tight_layout(rect=[0, 0, 0.88, 1.0])
     fig.savefig(os.path.join(FIGURES_DIR,fname),dpi=DPI); plt.close(fig)
     print(f"  ✓  {fname}")
 
@@ -177,7 +187,7 @@ def times_chart(raw, fname):
     colors=[st(c)["color"] for c in cols]
     fig,ax=plt.subplots(figsize=(12,5))
     piv.plot(kind="bar",ax=ax,width=.75,color=colors,edgecolor="white",linewidth=.5)
-    ax.set_ylabel("Mean time (s)"); ax.set_title("Training times",fontweight="bold")
+    ax.set_ylabel("Mean time (s)"); ax.set_title("Training times", fontweight="bold")
     ax.legend(title="Model",bbox_to_anchor=(1.02,1),loc="upper left",frameon=True)
     plt.xticks(rotation=35,ha="right"); fig.tight_layout()
     fig.savefig(os.path.join(FIGURES_DIR,fname),dpi=DPI); plt.close(fig)
@@ -252,8 +262,8 @@ def main():
         print("\n── Performance grids ──")
         for m in METRICS:
             if m not in blk.columns: continue
-            if sy: perf_grid(blk,sy,m,f"performance_synth_{m.lower()}.png","Synthetic - ")
-            if re: perf_grid(blk,re,m,f"performance_real_{m.lower()}.png","Real - ")
+            if sy: perf_grid(blk, sy, m, f"performance_synth_{m.lower()}.png", "Synthetic — ")
+            if re: perf_grid(blk, re, m, f"performance_real_{m.lower()}.png",  "Real — ")
         print("\n── DDCW vs baseline ──")
         for m in METRICS:
             if m in blk.columns: ddcw_grid(blk,m,f"ddcw_all_{m.lower()}.png")
