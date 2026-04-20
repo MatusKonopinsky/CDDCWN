@@ -15,7 +15,6 @@ Expected raw files in ./data/real/real_raw/:
         elec.csv                              - Electricity
         kddcup.data_10_percent_corrected      - KDD99 (or kdd99.csv)
         airlines.csv                          - Airlines
-        covtype.data / covtype.csv            - Forest CoverType
         shuttle.trn + shuttle.tst             - Shuttle (or shuttle.csv)
 """
 
@@ -167,38 +166,6 @@ def _process_airlines():
     X = df.iloc[:, :-1].values.astype(float)
     y = df.iloc[:, -1].values.astype(int)
     _save_clean(X, y, "airlines")
-
-
-def _process_covtype():
-    """
-    Forest CoverType - 581,012 samples, 54 features, 7 classes.
-    Some variants include a header (Elevation,...), others do not.
-    Label is 1-based (1-7) -> converted to 0-based (0-6).
-    """
-    candidates = ["covtype.data", "covtype.csv", "covtype.data.gz"]
-    path = next((os.path.join(RAW_DIR, c) for c in candidates
-                 if os.path.exists(os.path.join(RAW_DIR, c))), None)
-    if path is None:
-        print(f"  SKIP covtype - not found in {RAW_DIR}")
-        return
-
-    # Header auto-detection
-    try:
-        first = pd.read_csv(path, nrows=1, header=None).iloc[0, 0]
-        has_header = isinstance(first, str) and not first.replace(".", "").lstrip("-").isdigit()
-    except Exception:
-        has_header = False
-
-    df = pd.read_csv(path, header=0 if has_header else None, low_memory=False)
-    df.dropna(inplace=True)
-    df = _encode_categoricals(df)
-
-    X = df.iloc[:, :-1].values.astype(float)
-    y = df.iloc[:, -1].values.astype(int)
-    if y.min() == 1:
-        y = y - 1  # 1-based -> 0-based
-    _save_clean(X, y, "covtype")
-
 
 def _process_shuttle():
     """

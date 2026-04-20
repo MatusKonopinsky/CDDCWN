@@ -45,6 +45,11 @@ imbalance_config_binary = {
     1: N_SAMPLES - int(N_SAMPLES * MAJ_RATIO)
 }
 
+balanced_config_binary = {
+    0: int(N_SAMPLES * 0.5),
+    1: N_SAMPLES - int(N_SAMPLES * 0.5)
+}
+
 
 # =============================================================================
 # BINARY DATASETY
@@ -93,6 +98,73 @@ def generate_with_target_counts(stream_like, target_counts, batch_size=50_000, m
         f"Failed to collect enough samples for target_counts={target_counts} "
         f"after {max_batches} batches."
     )
+
+def generate_balanced_datasets():
+    """
+    Generate 1:1 class-ratio versions of SEA and Agrawal for sanity-checking
+    robustness on non-imbalanced streams. Configuration mirrors the imbalanced
+    variants so that direct comparisons are meaningful.
+    """
+    print("Generating balanced datasets...")
+
+    # SEA balanced — abrupt drift
+    print("Generating balanced SEA with abrupt drift...")
+    stream1 = SEAGenerator(classification_function=0, random_state=42)
+    stream2 = SEAGenerator(classification_function=2, random_state=42)
+
+    drift_stream = ConceptDriftStream(
+        stream=stream1,
+        drift_stream=stream2,
+        position=N_SAMPLES // 2,
+        width=100,
+    )
+
+    # Potlačíme varovanie "overflow encountered in exp" z knižnice skmultiflow
+    with np.errstate(over='ignore'):
+        X, y, total_generated, counts = generate_with_target_counts(
+            drift_stream,
+            target_counts=balanced_config_binary,
+            batch_size=50_000,
+            max_batches=100
+        )
+
+    df_sea = pd.DataFrame(X, columns=[f"attr_{i}" for i in range(X.shape[1])])
+    df_sea["class"] = y.astype(int)
+    df_sea.to_csv(os.path.join(DATA_DIR_BINARY, "sea_balanced.csv"), index=False)
+
+    print(f"Done. (Generated {total_generated} samples to find 50/50 balance)")
+    print("Class distribution:")
+    print(df_sea["class"].value_counts(normalize=True).sort_index())
+    print()
+
+    # Agrawal balanced — abrupt drift
+    print("Generating balanced Agrawal with abrupt drift...")
+    stream1 = AGRAWALGenerator(classification_function=0, random_state=42)
+    stream2 = AGRAWALGenerator(classification_function=1, random_state=42)
+
+    drift_stream = ConceptDriftStream(
+        stream=stream1,
+        drift_stream=stream2,
+        position=N_SAMPLES // 2,
+        width=100,
+    )
+
+    with np.errstate(over='ignore'):
+        X, y, total_generated, counts = generate_with_target_counts(
+            drift_stream,
+            target_counts=balanced_config_binary,
+            batch_size=50_000,
+            max_batches=100
+        )
+
+    df_agr = pd.DataFrame(X, columns=[f"attr_{i}" for i in range(X.shape[1])])
+    df_agr["class"] = y.astype(int)
+    df_agr.to_csv(os.path.join(DATA_DIR_BINARY, "agrawal_balanced.csv"), index=False)
+
+    print(f"Done. (Generated {total_generated} samples to find 50/50 balance)")
+    print("Class distribution:")
+    print(df_agr["class"].value_counts(normalize=True).sort_index())
+    print()
 
 
 def generate_binary_datasets():
@@ -459,8 +531,9 @@ def generate_multiclass_datasets():
 
 
 if __name__ == "__main__":
-    generate_binary_datasets()
-    generate_multiclass_datasets()
+    generate_balanced_datasets()
+    #generate_binary_datasets()
+    #generate_multiclass_datasets()
 
     print("\nDone.")
     print("Binary datasets saved to:", DATA_DIR_BINARY)

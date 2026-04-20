@@ -48,7 +48,6 @@ DATASETS = {
     "KDD99":     "real/real_clean/kdd99_clean.csv",
     "Airlines":  "real/real_clean/airlines_clean.csv",
     "Shuttle":   "real/real_clean/shuttle_clean.csv",
-    "CoverType": "real/real_clean/covtype_clean.csv",
     "Jigsaw":    "real/real_clean/jigsaw_clean.csv",
     "ElectCovid": "real/real_clean/elect_covid_clean.csv",
     "FakeNewsComb": "real/real_clean/comb_clean.csv",

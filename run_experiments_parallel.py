@@ -48,6 +48,9 @@ PRETRAIN_SIZE = 2000
 BLOCK_SIZE    = 500
 
 SYNTHETIC_DATASETS = {
+    # Binary (balance 50/50)
+    "SEA_Balanced": "synthetic_imbalanced/sea_balanced.csv",
+    "Agrawal_Balanced": "synthetic_imbalanced/agrawal_balanced.csv",
     # Binary (imbalance 90/10)
     "SEA_Imb9010":               "synthetic_imbalanced/sea_abrupt_imb9010.csv",
     "Agrawal_Imb9010":           "synthetic_imbalanced/agrawal_drift_imb9010.csv",
