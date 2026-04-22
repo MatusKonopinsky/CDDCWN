@@ -1,6 +1,6 @@
 """
 Post-hoc drift-detection analysis computed from block metrics (blocks_df)
-and saved drift_points. Works only for models with a drift detector (DDCW)
+and saved drift_points. Works only for models with a drift detector (IDDCW)
 and datasets with known drift points.
 
 Output (one row per Run_ID x Dataset x Model):
@@ -32,18 +32,20 @@ import pandas as pd
 
 
 # Known drift points (ground truth from generate_imbalanced_data.py)
-# Value = sample index (after pretrain_size=500 offset) where drift occurs.
+# Value = sample index (after PRETRAIN_SIZE=2000 offset, see run_experiments_parallel.py) where drift occurs.
 # For datasets without drift = None.
 # For reoccurring = list of all drift points.
 KNOWN_DRIFT_POINTS = {
     "SEA_Imb9010":               None,
     "Agrawal_Imb9010":           25000,
     "hyperplane_gradual_imb9010":None,   # continuous gradual drift - no point event
-    "rbf_drift_imb9010":         None,   # continuous gradual drift - no point event
+    "rbf_drift_balanced":        None,   # continuous gradual drift - no point event
     "MC_Abrupt_3C_70155":        25000,
     "MC_Gradual_3C_70155":       25000,  # transition midpoint
     "MC_Abrupt_4C_601555":       25000,
     "MC_Reoccurring_3C_80155":   [16667, 33333],  # 3-phase reoccurring
+    "SEA_Balanced":              None,
+    "Agrawal_Balanced":          None,
 }
 
 # Window before/after drift point for analysis [in blocks x BLOCK_SIZE samples]

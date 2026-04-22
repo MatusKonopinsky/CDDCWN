@@ -15,11 +15,12 @@ Message types (tuple):
     ("STOP",)                                            - terminate logger process
 
 Output example:
-  ✔  [SEA_Imb9010|run1]        DDCW_aug+drift          RWA=0.9955  F1=0.9389  MinF1=0.8915  Drift=0  312s
-  ✔  [Agrawal_Imb9010|run1]    ARF                     RWA=0.1059  F1=0.4803  MinF1=0.0132  Drift=0  208s
+  [SEA_Imb9010|run1]        IDDCW_mode-augment...   RWA=0.9955  GMean=0.9389  MinRec=0.8915  Drift=0  312s
+  [Agrawal_Imb9010|run1]    ARF                     RWA=0.1059  GMean=0.4803  MinRec=0.0132  Drift=0  208s
   ────────────────────────────────────────────────────────────────────────────
-  [rbf_drift_imb9010|run1]     LeveragingBaggingClas…  ████████░░  42%  21000/49500
-  [MC_Abrupt_3C|run1]          DDCW_aug+drift          ███░░░░░░░  18%   9000/49500
+  [rbf_drift_balanced|run1]    LeveragingBagging…      ████████░░  42%  21000/49500
+  [MC_Abrupt_3C_70155|run1]    IDDCW_mode-augment…     ███░░░░░░░  18%   9000/49500
+    Done: 2/8    ████████░░░░░░░░  25%      2/8
     Done: 2/8    ████████░░░░░░░░  25%      2/8
 """
 
@@ -150,7 +151,7 @@ def _logger_process(queue, total_tasks):
             tag    = _trunc(f"[{d_name}|run{run_id}]", DS_W)
             model  = _trunc(m_name, MODEL_W)
             _emit_log_line(
-                f"  ✔  {tag:<{DS_W}}  {model:<{MODEL_W}}"
+                f"    {tag:<{DS_W}}  {model:<{MODEL_W}}"
                 f"  RWA={rwa:.4f}  GMean={gmean:.4f}"
                 f"  MinRec={minrec:.4f}  Drift={drift}  {elapsed:.0f}s"
             )

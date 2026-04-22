@@ -1,7 +1,7 @@
 """
 Preprocess balanced RBF Drift dataset provided by the supervisor.
 
-Input:  ./data/real/real_raw/rbf_supervisor.csv
+Input:  ./data/real/real_raw/rbf_drift.csv
         - ~1,000,000 samples, 10 features + 'class' column
         - String labels: 'class1', 'class2'
         - Class ratio ~50/50 (balanced)
@@ -19,7 +19,7 @@ Output: ./data/synthetic_imbalanced/rbf_drift_balanced.csv
         - Class ratio ~50/50 (balanced, drift preserved)
 
 Run:
-    python preprocess_rbf_supervisor.py
+    python preprocess_rbf.py
 """
 
 import os

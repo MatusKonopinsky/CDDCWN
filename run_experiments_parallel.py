@@ -1,5 +1,5 @@
 """
-Runner for streaming experiments with DDCW and baselines.
+Runner for streaming experiments with IDDCW and baselines.
 
 Uses:
     utils/logger.py        - live dashboard, queue communication
@@ -7,7 +7,7 @@ Uses:
     utils/model_factory.py - model definitions and get_model_configs
     utils/data_preprocesing.py - loading CSV datasets
     utils/rwa_metric.py    - RWA implementation
-    model/configurable_ddcw_new.py - DDCW model
+    model/configurable_ddcw.py - IDDCW model
 """
 
 import os
@@ -51,11 +51,11 @@ SYNTHETIC_DATASETS = {
     # Binary (balance 50/50)
     "SEA_Balanced": "synthetic_imbalanced/sea_balanced.csv",
     "Agrawal_Balanced": "synthetic_imbalanced/agrawal_balanced.csv",
+    "rbf_drift_balanced":         "synthetic_imbalanced/rbf_drift_balanced.csv",
     # Binary (imbalance 90/10)
     "SEA_Imb9010":               "synthetic_imbalanced/sea_abrupt_imb9010.csv",
     "Agrawal_Imb9010":           "synthetic_imbalanced/agrawal_drift_imb9010.csv",
     "hyperplane_gradual_imb9010":"synthetic_imbalanced/hyperplane_gradual_imb9010.csv",
-    "rbf_drift_balanced":         "synthetic_imbalanced/rbf_drift_balanced.csv",
     # Multiclass
     "MC_Abrupt_3C_70155":        "synthetic_multiclass/mc_abrupt_3c_70155.csv",
     "MC_Gradual_3C_70155":       "synthetic_multiclass/mc_gradual_3c_70155.csv",
@@ -63,7 +63,7 @@ SYNTHETIC_DATASETS = {
     "MC_Reoccurring_3C_80155":   "synthetic_multiclass/mc_reoccurring_3c_80155.csv",
 }
 
-# Real datasets - outputs from preprocess_real_datasets.py
+# Real datasets - outputs from utils/data_preprocesing.py
 # All are in MinMaxScaled CSV format without header, last column = label.
 # If any _clean.csv is missing, the dataset is skipped with a warning.
 REAL_DATASETS = {
@@ -93,7 +93,7 @@ def _run_one_dataset(args):
     """
     Worker: processes one (run_id, d_name) pair sequentially across all models.
     Accepts a file path instead of numpy arrays to avoid serializing large
-    arrays (CovType 250MB, KDD99 160MB) via spawn IPC on Windows.
+    arrays (KDD99 160MB, Jigsaw ~130MB) via spawn IPC on Windows.
     _LOG_QUEUE is set through worker_init, not via task tuple (Windows/spawn fix).
     """
     run_id, d_name, d_path, preds_dir = args

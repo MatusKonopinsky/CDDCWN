@@ -9,7 +9,7 @@ Inputs (from the results/ directory):
 Outputs (to results/figures/) - all .png:
     - performance_synth_<metric>.png     - grid: all models on synthetic datasets
     - performance_real_<metric>.png      - grid: all models on real datasets
-    - ddcw_all_<metric>.png              - grid: DDCW vs HT baseline on all streams
+    - ddcw_all_<metric>.png              - grid: IDDCW vs HT baseline on all streams
     - showcase_<dataset>.png             - one dataset, multiple metrics side by side
     - training_times.png                 - grouped bar chart
     - summary_table.tex                  - LaTeX table with bold best values
@@ -42,7 +42,7 @@ MODEL_SHORT = {
 
 # Colors and lines - DDCW orange, ARF blue, others thinner
 STYLE = {
-    "DDCW":          {"color": "#d35400", "lw": 2.0, "ls": "-",  "zorder": 10},
+    "IDDCW":          {"color": "#d35400", "lw": 2.0, "ls": "-",  "zorder": 10},
     "ARF":           {"color": "#2980b9", "lw": 1.3, "ls": "-",  "zorder": 5},
     "OzaBagADWIN":   {"color": "#27ae60", "lw": 1.1, "ls": "--", "zorder": 4},
     "LevBagging":    {"color": "#8e44ad", "lw": 1.1, "ls": "--", "zorder": 4},
@@ -51,13 +51,13 @@ STYLE = {
 }
 _DFLT = {"color": "#34495e", "lw": 1.0, "ls": "-", "zorder": 1}
 
-REAL_NAMES = {"ELEC", "KDD99", "Airlines", "Shuttle", "CoverType", "Jigsaw"}
+REAL_NAMES = {"ELEC", "KDD99", "Airlines", "Shuttle", "CoverType", "Jigsaw", "ElectCovid", "FakeNewsComb"}
 DPI = 300
 
 plt.rcParams.update({
     "font.family": "serif", "font.size": 9,
     "axes.titlesize": 10, "axes.labelsize": 9,
-    "legend.fontsize": 7.5, "xtick.labelsize": 8, "ytick.labelsize": 8,
+    "legend.fontsize": 9, "xtick.labelsize": 8, "ytick.labelsize": 8,
     "figure.dpi": DPI, "savefig.dpi": DPI, "savefig.bbox": "tight",
     "axes.grid": True, "grid.alpha": 0.25, "grid.linewidth": 0.5,
     "axes.spines.top": False, "axes.spines.right": False,
@@ -67,7 +67,7 @@ plt.rcParams.update({
 # HELPERS
 # =============================================================================
 def sn(name):
-    if name.startswith("DDCW"): return "DDCW"
+    if name.startswith("DDCW"): return "IDDCW"
     return MODEL_SHORT.get(name, name[:20])
 
 def st(m): return STYLE.get(m, _DFLT)
@@ -89,12 +89,12 @@ def _plot_ds(ax, blk, ds, metric, ylabel=True, title=None):
     sub = blk[blk["Dataset"]==ds].copy()
     if sub.empty: ax.text(.5,.5,"no data",transform=ax.transAxes,ha="center"); return
     sub["M"] = sub["Model"].apply(sn)
-    for m in sorted(sub["M"].unique(), key=lambda x:(0 if x=="DDCW" else 1,x)):
+    for m in sorted(sub["M"].unique(), key=lambda x:(0 if x=="IDDCW" else 1,x)):
         g = sub[sub["M"]==m].groupby("Block_End")[metric].agg(["mean","std"]).reset_index()
         g["std"]=g["std"].fillna(0); s=st(m)
         ax.plot(g["Block_End"],g["mean"],label=m,color=s["color"],
                 linewidth=s["lw"],linestyle=s["ls"],zorder=s["zorder"])
-        if m=="DDCW":
+        if m=="IDDCW":
             ax.axhline(g["mean"].mean(),color=s["color"],lw=.6,ls=":",alpha=.45,zorder=s["zorder"]-1)
     ax.set_title(title if title is not None else ds, fontweight="bold", pad=4)
     ax.set_xlabel("Samples")
@@ -120,21 +120,21 @@ def perf_grid(blk, dsets, metric, fname, prefix=""):
     fig.suptitle(f"{prefix}{metric.replace('_',' ')}",fontsize=11,fontweight="bold",y=1.01)
     fig.tight_layout(rect=[0, 0, 0.88, 1.0])
     fig.savefig(os.path.join(FIGURES_DIR,fname),dpi=DPI); plt.close(fig)
-    print(f"  ✓  {fname}")
+    print(f"   {fname}")
 
 # =============================================================================
 # 2. DDCW vs BASELINE on all streams
 # =============================================================================
 def ddcw_grid(blk, metric, fname):
     df=blk.copy(); df["M"]=df["Model"].apply(sn)
-    df=df[df["M"].isin(["DDCW","HoeffdingTree"])]
+    df=df[df["M"].isin(["IDDCW","HoeffdingTree"])]
     if df.empty: return
     dsets=sorted(df["Dataset"].unique()); n=len(dsets)
     nc=3 if n>4 else 2; nr=(n+nc-1)//nc
     fig,axes=plt.subplots(nr,nc,figsize=(nc*4.5,nr*3.),squeeze=False)
     for i,ds in enumerate(dsets):
         r,c=divmod(i,nc); ax=axes[r,c]; dd=df[df["Dataset"]==ds]
-        for m in ["DDCW","HoeffdingTree"]:
+        for m in ["IDDCW","HoeffdingTree"]:
             g=dd[dd["M"]==m]
             if g.empty: continue
             a=g.groupby("Block_End")[metric].agg(["mean","std"]).reset_index(); s=st(m)
@@ -150,10 +150,11 @@ def ddcw_grid(blk, metric, fname):
             loc="center left", bbox_to_anchor=(1.0, 0.5),
             ncol=1, frameon=True,
             title="Model", title_fontsize=8)
-    fig.suptitle(f"DDCW vs HoeffdingTree — {metric.replace('_',' ')}",
+    fig.suptitle(f"IDDCW vs HoeffdingTree — {metric.replace('_',' ')}",
                 fontsize=11,fontweight="bold",y=1.01)
     fig.tight_layout(rect=[0, 0, 0.88, 1.0])
-    plt.close(fig); print(f"  ✓  {fname}")
+    fig.savefig(os.path.join(FIGURES_DIR, fname), dpi=DPI)
+    plt.close(fig); print(f"   {fname}")
 
 # =============================================================================
 # 3. SHOWCASE - one dataset, multiple metrics
@@ -173,7 +174,7 @@ def showcase(blk, ds, mlist, fname):
     fig.suptitle(f"Model comparison — {ds}", fontsize=11, fontweight="bold", y=1.02)
     fig.tight_layout(rect=[0, 0, 0.88, 1.0])
     fig.savefig(os.path.join(FIGURES_DIR,fname),dpi=DPI); plt.close(fig)
-    print(f"  ✓  {fname}")
+    print(f"   {fname}")
 
 # =============================================================================
 # 4. TRAINING TIMES
@@ -183,7 +184,7 @@ def times_chart(raw, fname):
     df=raw.copy(); df["M"]=df["Model"].apply(sn)
     agg=df.groupby(["Dataset","M"])["Total_Time_s"].mean().reset_index()
     piv=agg.pivot(index="Dataset",columns="M",values="Total_Time_s")
-    cols=sorted(piv.columns,key=lambda x:(0 if x=="DDCW" else 1,x)); piv=piv[cols]
+    cols=sorted(piv.columns,key=lambda x:(0 if x=="IDDCW" else 1,x)); piv=piv[cols]
     colors=[st(c)["color"] for c in cols]
     fig,ax=plt.subplots(figsize=(12,5))
     piv.plot(kind="bar",ax=ax,width=.75,color=colors,edgecolor="white",linewidth=.5)
@@ -191,7 +192,7 @@ def times_chart(raw, fname):
     ax.legend(title="Model",bbox_to_anchor=(1.02,1),loc="upper left",frameon=True)
     plt.xticks(rotation=35,ha="right"); fig.tight_layout()
     fig.savefig(os.path.join(FIGURES_DIR,fname),dpi=DPI); plt.close(fig)
-    print(f"  ✓  {fname}")
+    print(f"   {fname}")
 
 # =============================================================================
 # 5-6. LATEX TABLES
@@ -223,14 +224,14 @@ def latex_table(summ, fname):
     L+=["\\bottomrule","\\end{tabular}","\\end{table}"]
     p=os.path.join(FIGURES_DIR,fname)
     with open(p,"w",encoding="utf-8") as f: f.write("\n".join(L))
-    print(f"  ✓  {fname}")
+    print(f"   {fname}")
 
 def latex_times(raw,fname):
     if "Total_Time_s" not in raw.columns: return
     df=raw.copy(); df["M"]=df["Model"].apply(sn)
     agg=df.groupby(["Dataset","M"])["Total_Time_s"].mean().reset_index()
     piv=agg.pivot(index="Dataset",columns="M",values="Total_Time_s")
-    ms=sorted(piv.columns,key=lambda x:(0 if x=="DDCW" else 1,x))
+    ms=sorted(piv.columns,key=lambda x:(0 if x=="IDDCW" else 1,x))
     L=["\\begin{table}[h]","\\centering",
        "\\caption{Training times (s).}","\\label{tab:times}","\\small",
        "\\begin{tabular}{l"+"r"*len(ms)+"}","\\toprule",
@@ -241,7 +242,7 @@ def latex_times(raw,fname):
     L+=["\\bottomrule","\\end{tabular}","\\end{table}"]
     p=os.path.join(FIGURES_DIR,fname)
     with open(p,"w",encoding="utf-8") as f: f.write("\n".join(L))
-    print(f"  ✓  {fname}")
+    print(f"   {fname}")
 
 # =============================================================================
 # MAIN
@@ -264,7 +265,7 @@ def main():
             if m not in blk.columns: continue
             if sy: perf_grid(blk, sy, m, f"performance_synth_{m.lower()}.png", "Synthetic — ")
             if re: perf_grid(blk, re, m, f"performance_real_{m.lower()}.png",  "Real — ")
-        print("\n── DDCW vs baseline ──")
+        print("\n── IDDCW vs baseline ──")
         for m in METRICS:
             if m in blk.columns: ddcw_grid(blk,m,f"ddcw_all_{m.lower()}.png")
         print("\n── Showcase ──")

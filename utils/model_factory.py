@@ -2,7 +2,7 @@
 Model definitions and construction for experiments.
 
 Models:
-    1. DDCW            - main proposed model
+    1. IDDCW            - main proposed model
     2. ARF             - AdaptiveRandomForest (state-of-the-art streaming ensemble)
     3. OzaBaggingADWIN - OzaBagging + ADWIN drift detector
     4. LevBag          - LeveragingBagging (strong diverse ensemble)
@@ -44,13 +44,13 @@ try:
 except Exception:
     HAS_ADABOOST = False
 
-from model.configurable_ddcw import Configurable_DDCW
+from model.configurable_ddcw import IDDCW
 
 
 def get_model_name(model):
-    if isinstance(model, Configurable_DDCW):
+    if isinstance(model, IDDCW):
         params = model.get_params()
-        name = "DDCW"
+        name = "IDDCW"
         name += f"_mode-{params['replay_mode']}"
         if params["augmentation_mode"] != "none":
             name += f"_aug-{params['augmentation_mode']}{params['augmentation_strength']}"
@@ -70,7 +70,7 @@ def get_model_configs(run_id=1, n_features=None):
     Return the list of models for one experiment run.
 
     n_features : int or None
-        If >= 50, NaiveBayes is removed from DDCW pool (overflow at 54+ features).
+        If >= 50, NaiveBayes is removed from IDDCW pool (overflow at 54+ features).
     """
     if n_features is not None and n_features >= 50:
         estimators_hetero = [
@@ -91,8 +91,8 @@ def get_model_configs(run_id=1, n_features=None):
 
     models = []
 
-    # 1) DDCW
-    models.append(Configurable_DDCW(
+    # 1) IDDCW
+    models.append(IDDCW(
         base_estimators=estimators_hetero,
         period=600,
         beta=1.5,
@@ -126,10 +126,9 @@ def get_model_configs(run_id=1, n_features=None):
             random_state=600 + run_id,
         ))
 
-    # 3) OzaBagging
-    # Each sample is trained k times according to Poisson(1) distribution. Strong general baseline.
     # 3) OzaBagging + ADWIN
     # OzaBagging extended with ADWIN drift detector - consistent with ARF.
+    # Each sample is trained k times according to Poisson(1) distribution.
     if HAS_OZA:
         models.append(OzaBaggingADWINClassifier(
             base_estimator=HoeffdingTreeClassifier(),

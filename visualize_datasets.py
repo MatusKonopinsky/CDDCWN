@@ -37,7 +37,7 @@ DATASETS = {
     "SEA_Imb9010":                "synthetic_imbalanced/sea_abrupt_imb9010.csv",
     "Agrawal_Imb9010":            "synthetic_imbalanced/agrawal_drift_imb9010.csv",
     "hyperplane_gradual_imb9010": "synthetic_imbalanced/hyperplane_gradual_imb9010.csv",
-    "rbf_drift_imb9010":          "synthetic_imbalanced/rbf_drift_imb9010.csv",
+    "rbf_drift_balanced":          "synthetic_imbalanced/rbf_drift_balanced.csv",
     "SEA_Bal":                "synthetic_imbalanced/sea_balanced.csv",
     "Agrawal_Bal":            "synthetic_imbalanced/agrawal_balanced.csv",
     # Synthetic multiclass

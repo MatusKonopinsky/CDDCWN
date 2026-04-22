@@ -1,8 +1,7 @@
 """
-    Implementation of a drift-aware online ensemble classifier Configurable_DDCW
-    for imbalanced data streams. The file contains:
+    Implementation of a drift-aware online ensemble classifier IDDCW (Improved DDCW) The file contains:
     1. SimplePageHinkley: a lightweight concept-drift detector on the error stream.
-    2. Configurable_DDCW: an adaptive ensemble with expert weighting,
+    2. IDDCW: an adaptive ensemble with expert weighting,
        minority replay/augmentation, and majority-recall regulation.
 
 Main features:
@@ -87,7 +86,7 @@ class SimplePageHinkley:
         return False
 
 
-class Configurable_DDCW(BaseSKMObject, ClassifierMixin, MetaEstimatorMixin):
+class IDDCW(BaseSKMObject, ClassifierMixin, MetaEstimatorMixin):
     class WeightedExpert:
         def __init__(self, estimator, weight, num_classes):
             self.estimator = estimator
