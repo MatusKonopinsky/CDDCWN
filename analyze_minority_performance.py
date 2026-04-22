@@ -73,17 +73,10 @@ def save_confusion_matrix_plot(cm, labels, title, out_path):
 
 def get_npz_model_name(m_name):
     """
-    IDDCW model names in the CSV contain full config strings, but .npz files
-    were saved with a shortened version (truncated after augmentation suffix).
-    Strip everything from '_drift_' onward to match the saved filename.
+    Construct the model name exactly as it was saved in run_experiments_parallel.py.
+    It truncates the full name to 50 characters and replaces '/' with '_'.
     """
-    if m_name.startswith("IDDCW_"):
-        # Keep only up to (and including) the augmentation noise part
-        import re
-        match = re.match(r"(IDDCW_mode-[^_]+_aug-[^_]+)", m_name)
-        if match:
-            return match.group(1)
-    return m_name
+    return str(m_name)[:50].replace(chr(47), chr(95))
 
 def analyze_results():
     ensure_dirs()

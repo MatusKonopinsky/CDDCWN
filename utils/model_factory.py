@@ -117,7 +117,7 @@ def get_model_configs(run_id=1, n_features=None):
         keep_class_buffers_on_drift=True,
         random_state=400 + run_id,
     ))
-
+    '''
     # 2) ARF
     # State-of-the-art streaming ensemble. Each tree has its own ADWIN detector.
     if HAS_ARF:
@@ -158,5 +158,5 @@ def get_model_configs(run_id=1, n_features=None):
     # Simple single-model baseline. Hoeffding bound guarantees statistically
     # equivalent behavior to training with unlimited data.
     models.append(HoeffdingTreeClassifier())
-
+    '''
     return models
