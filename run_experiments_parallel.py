@@ -49,18 +49,18 @@ BLOCK_SIZE    = 500
 
 SYNTHETIC_DATASETS = {
     # Binary (balance 50/50)
-    #"SEA_Balanced": "synthetic_imbalanced/sea_balanced.csv",
-    #"Agrawal_Balanced": "synthetic_imbalanced/agrawal_balanced.csv",
+    "SEA_Balanced": "synthetic_imbalanced/sea_balanced.csv",
+    "Agrawal_Balanced": "synthetic_imbalanced/agrawal_balanced.csv",
     # Binary (imbalance 90/10)
-    #"SEA_Imb9010":               "synthetic_imbalanced/sea_abrupt_imb9010.csv",
-    #"Agrawal_Imb9010":           "synthetic_imbalanced/agrawal_drift_imb9010.csv",
-    #"hyperplane_gradual_imb9010":"synthetic_imbalanced/hyperplane_gradual_imb9010.csv",
+    "SEA_Imb9010":               "synthetic_imbalanced/sea_abrupt_imb9010.csv",
+    "Agrawal_Imb9010":           "synthetic_imbalanced/agrawal_drift_imb9010.csv",
+    "hyperplane_gradual_imb9010":"synthetic_imbalanced/hyperplane_gradual_imb9010.csv",
     "rbf_drift_balanced":         "synthetic_imbalanced/rbf_drift_balanced.csv",
     # Multiclass
-    #"MC_Abrupt_3C_70155":        "synthetic_multiclass/mc_abrupt_3c_70155.csv",
-    #"MC_Gradual_3C_70155":       "synthetic_multiclass/mc_gradual_3c_70155.csv",
-    #"MC_Abrupt_4C_601555":       "synthetic_multiclass/mc_abrupt_4c_601555.csv",
-    #"MC_Reoccurring_3C_80155":   "synthetic_multiclass/mc_reoccurring_3c_80155.csv",
+    "MC_Abrupt_3C_70155":        "synthetic_multiclass/mc_abrupt_3c_70155.csv",
+    "MC_Gradual_3C_70155":       "synthetic_multiclass/mc_gradual_3c_70155.csv",
+    "MC_Abrupt_4C_601555":       "synthetic_multiclass/mc_abrupt_4c_601555.csv",
+    "MC_Reoccurring_3C_80155":   "synthetic_multiclass/mc_reoccurring_3c_80155.csv",
 }
 
 # Real datasets - outputs from preprocess_real_datasets.py
@@ -82,7 +82,7 @@ REAL_DATASETS = {
 # "synthetic"  - only synthetic datasets
 # "real"       - only real datasets
 # "all"        - all datasets
-DATASET_MODE = "synthetic"
+DATASET_MODE = "all"
 
 
 # =============================================================================
